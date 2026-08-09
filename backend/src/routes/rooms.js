@@ -1,0 +1,13 @@
+const router = require('express').Router();
+const ctrl = require('../controllers/roomController');
+const { auth, adminOnly } = require('../middleware/auth');
+
+router.get('/stats', auth, ctrl.stats);
+router.get('/occupancy/:month/:year', auth, ctrl.occupancy);
+router.get('/', auth, ctrl.getAll);
+router.get('/:id', auth, ctrl.getById);
+router.post('/', auth, adminOnly, ctrl.create);
+router.put('/:id', auth, adminOnly, ctrl.update);
+router.delete('/:id', auth, adminOnly, ctrl.remove);
+
+module.exports = router;

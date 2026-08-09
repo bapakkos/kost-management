@@ -1,0 +1,55 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #333; }
+.loading { display: flex; justify-content: center; align-items: center; height: 100vh; font-size: 18px; }
+
+/* Layout */
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 220px; background: #001529; color: #fff; padding: 20px 0; }
+.sidebar h2 { padding: 0 20px 20px; font-size: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 10px; }
+.sidebar a { display: block; padding: 12px 20px; color: rgba(255,255,255,0.7); text-decoration: none; font-size: 14px; }
+.sidebar a:hover, .sidebar a.active { background: rgba(255,255,255,0.1); color: #fff; }
+.main-content { flex: 1; padding: 20px; }
+.header { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 12px 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.header h1 { font-size: 18px; }
+.header button { padding: 6px 16px; background: #ff4d4f; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+
+/* Login */
+.login-page { display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5; }
+.login-box { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 360px; }
+.login-box h1 { text-align: center; margin-bottom: 24px; font-size: 22px; }
+.login-box input { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+.login-box button { width: 100%; padding: 10px; background: #1890ff; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; }
+.login-box .error { color: #ff4d4f; margin-bottom: 12px; font-size: 13px; }
+
+/* Main Page */
+.main-page { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+.month-selector { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #f0f0f0; }
+.month-selector button { padding: 6px 12px; background: #f0f0f0; border: 1px solid #d9d9d9; border-radius: 4px; cursor: pointer; }
+.month-selector h2 { font-size: 18px; min-width: 180px; text-align: center; }
+.room-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.room-table th { background: #fafafa; padding: 10px 8px; text-align: left; border-bottom: 2px solid #f0f0f0; font-weight: 600; white-space: nowrap; }
+.room-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+.room-table tr:hover { background: #fafafa; }
+.room-table .checkout-row { background: #fff1f0; }
+.room-table .checkout-row:hover { background: #ffe7e7; }
+.room-table .paid { color: #52c41a; font-weight: 600; }
+.room-table .unpaid { color: #ff4d4f; font-weight: 600; }
+.room-table .empty { color: #bbb; font-style: italic; }
+.booking-section { padding: 20px; border-top: 2px solid #f0f0f0; }
+.booking-section h3 { margin-bottom: 12px; font-size: 16px; }
+
+/* Forms */
+.page-container { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.page-container h2 { margin-bottom: 16px; font-size: 18px; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+.btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.btn-primary { background: #1890ff; color: #fff; }
+.btn-danger { background: #ff4d4f; color: #fff; }
+.btn-success { background: #52c41a; color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
+.data-table th { background: #fafafa; padding: 10px 8px; text-align: left; border-bottom: 2px solid #f0f0f0; }
+.data-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+.card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }

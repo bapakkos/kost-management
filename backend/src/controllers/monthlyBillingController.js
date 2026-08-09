@@ -1,0 +1,213 @@
+const { Op } = require('sequelize');
+const {
+  MonthlyBilling, RentalContract, Room, RoomType, Tenant,
+  PricingScheme, PricingSchemeRate,
+} = require('../models');
+const { calculateBillingTotal } = require('../utils/priceCalculator');
+const { calculateDueDate } = require('../utils/dueDateCalculator');
+
+exports.getAll = async (req, res) => {
+  try {
+    const { is_paid, period_month, period_year, contract_id } = req.query;
+    const where = {};
+    if (is_paid !== undefined) where.is_paid = is_paid === '1';
+    if (period_month) where.period_month = period_month;
+    if (period_year) where.period_year = period_year;
+    if (contract_id) where.rental_contract_id = contract_id;
+
+    const billings = await MonthlyBilling.findAll({
+      where,
+      include: [{ model: RentalContract, include: [Room, Tenant] }],
+      order: [['period_year', 'DESC'], ['period_month', 'DESC']],
+    });
+    res.json(billings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getById = async (req, res) => {
+  try {
+    const billing = await MonthlyBilling.findByPk(req.params.id, {
+      include: [{ model: RentalContract, include: [Room, Tenant] }],
+    });
+    if (!billing) return res.status(404).json({ error: 'Billing not found' });
+    res.json(billing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.create = async (req, res) => {
+  try {
+    const contract = await RentalContract.findByPk(req.params.contractId, {
+      include: [PricingScheme, { model: Room, include: [RoomType] }],
+    });
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const { period_month, period_year } = req.body;
+    const rate = await PricingSchemeRate.findOne({
+      where: { pricing_scheme_id: contract.pricing_scheme_id, room_type_id: contract.Room.room_type_id },
+    });
+
+    const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
+    const addonParkir = req.body.addon_parkir || 300000;
+    const addonTv = req.body.addon_tv || 200000;
+    const addonInternet = req.body.addon_internet || 50000;
+    const discount = req.body.discount || 0;
+    const total = baseRent + addonParkir + addonTv + addonInternet - discount;
+
+    const dueDate = calculateDueDate(contract.start_date);
+    const dueDateStr = new Date(period_year, period_month - 1, dueDate.getDate()).toISOString().slice(0, 10);
+
+    const billing = await MonthlyBilling.create({
+      rental_contract_id: contract.id,
+      period_month,
+      period_year,
+      base_rent: baseRent,
+      addon_parkir: addonParkir,
+      addon_tv: addonTv,
+      addon_internet: addonInternet,
+      discount,
+      due_date: dueDateStr,
+      total_amount: total,
+      is_paid: false,
+    });
+
+    res.status(201).json(billing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.update = async (req, res) => {
+  try {
+    const billing = await MonthlyBilling.findByPk(req.params.id);
+    if (!billing) return res.status(404).json({ error: 'Billing not found' });
+
+    // Recalculate total if amounts changed
+    const updated = { ...req.body };
+    if (req.body.base_rent || req.body.addon_parkir || req.body.addon_tv || req.body.addon_internet || req.body.discount) {
+      updated.total_amount = calculateBillingTotal({ ...billing.dataValues, ...req.body });
+    }
+
+    await billing.update(updated);
+    res.json(billing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getByContract = async (req, res) => {
+  try {
+    const billings = await MonthlyBilling.findAll({
+      where: { rental_contract_id: req.params.contractId },
+      order: [['period_year', 'ASC'], ['period_month', 'ASC']],
+    });
+    res.json(billings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getOutstanding = async (req, res) => {
+  try {
+    const billings = await MonthlyBilling.findAll({
+      where: { is_paid: false },
+      include: [{ model: RentalContract, include: [Room, Tenant] }],
+      order: [['period_year', 'ASC'], ['period_month', 'ASC']],
+    });
+    res.json(billings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getSummary = async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const where = {};
+    if (month) where.period_month = month;
+    if (year) where.period_year = year;
+
+    const billings = await MonthlyBilling.findAll({ where });
+    const total = billings.reduce((sum, b) => sum + parseFloat(b.total_amount), 0);
+    const paid = billings.filter(b => b.is_paid).reduce((sum, b) => sum + parseFloat(b.total_amount), 0);
+    const unpaid = billings.filter(b => !b.is_paid).reduce((sum, b) => sum + parseFloat(b.total_amount), 0);
+
+    res.json({ total, paid, unpaid, count: billings.length, paid_count: billings.filter(b => b.is_paid).length, unpaid_count: billings.filter(b => !b.is_paid).length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.generate = async (req, res) => {
+  try {
+    const { month, year } = req.body;
+    const firstDay = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0);
+    const firstDayStr = firstDay.toISOString().slice(0, 10);
+    const lastDayStr = lastDay.toISOString().slice(0, 10);
+
+    const contracts = await RentalContract.findAll({
+      where: {
+        status: { [Op.ne]: 'keluar' },
+        start_date: { [Op.lte]: lastDayStr },
+        [Op.or]: [{ end_date: null }, { end_date: { [Op.gte]: firstDayStr } }],
+      },
+      include: [{ model: Room, include: [RoomType] }, PricingScheme],
+    });
+
+    const created = [];
+    for (const contract of contracts) {
+      const existing = await MonthlyBilling.findOne({
+        where: { rental_contract_id: contract.id, period_month: month, period_year: year },
+      });
+      if (existing) continue;
+
+      const rate = await PricingSchemeRate.findOne({
+        where: { pricing_scheme_id: contract.pricing_scheme_id, room_type_id: contract.Room.room_type_id },
+      });
+
+      const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
+      const total = baseRent + 300000 + 200000 + 50000;
+      const dueDate = calculateDueDate(contract.start_date);
+      const dueDateStr = new Date(year, month - 1, dueDate.getDate()).toISOString().slice(0, 10);
+
+      const billing = await MonthlyBilling.create({
+        rental_contract_id: contract.id,
+        period_month: month,
+        period_year: year,
+        base_rent: baseRent,
+        addon_parkir: 300000,
+        addon_tv: 200000,
+        addon_internet: 50000,
+        discount: 0,
+        due_date: dueDateStr,
+        total_amount: total,
+        is_paid: false,
+      });
+      created.push(billing);
+    }
+
+    res.json({ created: created.length, month, year });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.markPaid = async (req, res) => {
+  try {
+    const billing = await MonthlyBilling.findByPk(req.params.id);
+    if (!billing) return res.status(404).json({ error: 'Billing not found' });
+
+    await billing.update({
+      is_paid: true,
+      paid_date: req.body.paid_date || new Date().toISOString().slice(0, 10),
+      paid_amount: req.body.paid_amount || billing.total_amount,
+    });
+    res.json(billing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
