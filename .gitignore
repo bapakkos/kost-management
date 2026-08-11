@@ -27,6 +27,5 @@ lerna-debug.log*
 *.sln
 *.sw?
 
-# Database
-*.db
+# Database journal
 *.db-journal
