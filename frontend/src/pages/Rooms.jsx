@@ -9,9 +9,11 @@ export default function Rooms() {
   const [error, setError] = useState('');
   const [form, setForm] = useState({ room_number: '', floor: 1, room_type_id: '', status: 'available' });
   const [editing, setEditing] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  const [saving, setSaving] = useState(false);
   const [filters, setFilters] = useState({ floor: '', status: '', room_type_id: '' });
 
-  const fetch = async () => {
+  const fetchData = async () => {
     try {
       const params = {};
       if (filters.floor) params.floor = filters.floor;
@@ -33,24 +35,19 @@ export default function Rooms() {
     }
   };
 
-  useEffect(() => { fetch(); }, [filters]);
+  useEffect(() => { fetchData(); }, [filters]);
 
   const resetForm = () => {
     setForm({ room_number: '', floor: 1, room_type_id: '', status: 'available' });
-    setEditing(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     try {
-      if (editing) {
-        await api.put(`/rooms/${editing}`, form);
-      } else {
-        await api.post('/rooms', form);
-      }
+      await api.post('/rooms', form);
       resetForm();
-      fetch();
+      fetchData();
     } catch (err) {
       setError(err.response?.data?.error || 'Save failed');
     }
@@ -58,14 +55,39 @@ export default function Rooms() {
 
   const handleEdit = (r) => {
     setEditing(r.id);
-    setForm({ room_number: r.room_number, floor: r.floor, room_type_id: r.room_type_id || '', status: r.status });
+    setEditValues({
+      room_number: r.room_number,
+      floor: r.floor,
+      room_type_id: r.room_type_id || '',
+      status: r.status,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditing(null);
+    setEditValues({});
+  };
+
+  const handleSaveEdit = async (id) => {
+    setSaving(true);
+    setError('');
+    try {
+      await api.put(`/rooms/${id}`, editValues);
+      setEditing(null);
+      setEditValues({});
+      fetchData();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this room?')) return;
     try {
       await api.delete(`/rooms/${id}`);
-      fetch();
+      fetchData();
     } catch (err) {
       setError(err.response?.data?.error || 'Delete failed');
     }
@@ -94,7 +116,7 @@ export default function Rooms() {
       )}
 
       <form onSubmit={handleSubmit} className="card">
-        <h3>{editing ? 'Edit' : 'Add'} Room</h3>
+        <h3>Add Room</h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Room Number</label>
@@ -127,8 +149,7 @@ export default function Rooms() {
             </select>
           </div>
         </div>
-        <button className="btn btn-primary" type="submit">{editing ? 'Update' : 'Create'}</button>
-        {editing && <button className="btn" style={{ marginLeft: 8 }} onClick={resetForm}>Cancel</button>}
+        <button className="btn btn-primary" type="submit">Create</button>
       </form>
 
       <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
@@ -169,20 +190,75 @@ export default function Rooms() {
             <th>Floor</th>
             <th>Type</th>
             <th>Status</th>
-            <th>Actions</th>
+            <th style={{ width: 160 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rooms.map(r => (
-            <tr key={r.id}>
-              <td><strong>{r.room_number}</strong></td>
-              <td>{r.floor}</td>
-              <td>{getRoomTypeName(r.room_type_id)}</td>
-              <td>{r.status}</td>
-              <td>
-                <button className="btn btn-primary btn-sm" onClick={() => handleEdit(r)}>Edit</button>
-                <button className="btn btn-danger btn-sm" style={{ marginLeft: 4 }} onClick={() => handleDelete(r.id)}>Del</button>
-              </td>
+            <tr key={r.id} style={editing === r.id ? { backgroundColor: '#fffbe6' } : {}}>
+              {editing === r.id ? (
+                <>
+                  <td>
+                    <input
+                      value={editValues.room_number}
+                      onChange={e => setEditValues({ ...editValues, room_number: e.target.value })}
+                      style={{ width: '100%', padding: 4 }}
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={editValues.floor}
+                      onChange={e => setEditValues({ ...editValues, floor: parseInt(e.target.value) })}
+                      style={{ width: '100%', padding: 4 }}
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={editValues.room_type_id}
+                      onChange={e => setEditValues({ ...editValues, room_type_id: e.target.value })}
+                      style={{ width: '100%', padding: 4 }}
+                    >
+                      <option value="">--</option>
+                      {roomTypes.map(rt => (
+                        <option key={rt.id} value={rt.id}>{rt.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={editValues.status}
+                      onChange={e => setEditValues({ ...editValues, status: e.target.value })}
+                      style={{ width: '100%', padding: 4 }}
+                    >
+                      <option value="available">Available</option>
+                      <option value="occupied">Occupied</option>
+                      <option value="booking">Booking</option>
+                      <option value="maintenance">Maintenance</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(r.id)} disabled={saving}>
+                      {saving ? '...' : 'Save'}
+                    </button>
+                    <button className="btn btn-sm" style={{ marginLeft: 4 }} onClick={handleCancelEdit}>Cancel</button>
+                  </td>
+                </>
+              ) : (
+                <>
+                  <td><strong>{r.room_number}</strong></td>
+                  <td>{r.floor}</td>
+                  <td>{getRoomTypeName(r.room_type_id)}</td>
+                  <td>{r.status}</td>
+                  <td>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleEdit(r)}>Edit</button>
+                    <button className="btn btn-danger btn-sm" style={{ marginLeft: 4 }} onClick={() => handleDelete(r.id)}>Del</button>
+                  </td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>

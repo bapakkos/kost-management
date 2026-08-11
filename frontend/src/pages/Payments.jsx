@@ -66,7 +66,7 @@ export default function Payments() {
             <select value={form.tenant_id} onChange={e => setForm({ ...form, tenant_id: e.target.value })} required>
               <option value="">-- Select --</option>
               {tenants.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+                <option key={t.id} value={t.id}>{t.nama_panggilan || t.name}</option>
               ))}
             </select>
           </div>
@@ -125,7 +125,7 @@ export default function Payments() {
           {payments.map(p => (
             <tr key={p.id}>
               <td>{new Date(p.payment_date).toLocaleDateString('id-ID')}</td>
-              <td>{p.Tenant?.name || '-'}</td>
+              <td>{p.Tenant?.nama_panggilan || p.Tenant?.name || '-'}</td>
               <td>{p.Room?.room_number || '-'}</td>
               <td><strong>{formatRp(p.total_amount)}</strong></td>
               <td>{p.payment_method}</td>

@@ -85,7 +85,7 @@ export default function Contracts() {
             <select value={form.tenant_id} onChange={e => setForm({ ...form, tenant_id: e.target.value })} required>
               <option value="">-- Select --</option>
               {tenants.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+                <option key={t.id} value={t.id}>{t.nama_panggilan || t.name}</option>
               ))}
             </select>
           </div>
@@ -139,7 +139,7 @@ export default function Contracts() {
           {contracts.map(c => (
             <tr key={c.id}>
               <td><strong>{c.Room?.room_number}</strong> ({c.Room?.RoomType?.name})</td>
-              <td>{c.Tenant?.name}</td>
+              <td>{c.Tenant?.nama_panggilan || c.Tenant?.name || '-'}</td>
               <td>{c.PricingScheme?.name}</td>
               <td>{new Date(c.start_date).toLocaleDateString('id-ID')}</td>
               <td>{c.end_date ? new Date(c.end_date).toLocaleDateString('id-ID') : '-'}</td>

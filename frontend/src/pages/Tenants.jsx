@@ -5,7 +5,7 @@ export default function Tenants() {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ name: '', phone: '', email: '', id_card_number: '', emergency_contact: '', address: '', notes: '' });
+  const [form, setForm] = useState({ name: '', nama_panggilan: '', phone: '', email: '', id_card_number: '', emergency_contact: '', address: '', notes: '' });
   const [editing, setEditing] = useState(null);
 
   const fetch = async () => {
@@ -22,7 +22,7 @@ export default function Tenants() {
   useEffect(() => { fetch(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', phone: '', email: '', id_card_number: '', emergency_contact: '', address: '', notes: '' });
+    setForm({ name: '', nama_panggilan: '', phone: '', email: '', id_card_number: '', emergency_contact: '', address: '', notes: '' });
     setEditing(null);
   };
 
@@ -46,6 +46,7 @@ export default function Tenants() {
     setEditing(t.id);
     setForm({
       name: t.name || '',
+      nama_panggilan: t.nama_panggilan || '',
       phone: t.phone || '',
       email: t.email || '',
       id_card_number: t.id_card_number || '',
@@ -76,8 +77,12 @@ export default function Tenants() {
         <h3>{editing ? 'Edit' : 'Add'} Tenant</h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="form-group" style={{ flex: 1 }}>
-            <label>Name *</label>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+            <label>Nama Panggilan *</label>
+            <input value={form.nama_panggilan} onChange={e => setForm({ ...form, nama_panggilan: e.target.value })} required />
+          </div>
+          <div className="form-group" style={{ flex: 1 }}>
+            <label>Name</label>
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Phone *</label>
@@ -113,6 +118,7 @@ export default function Tenants() {
       <table className="data-table">
         <thead>
           <tr>
+            <th>Nama Panggilan</th>
             <th>Name</th>
             <th>Phone</th>
             <th>Email</th>
@@ -125,7 +131,8 @@ export default function Tenants() {
         <tbody>
           {tenants.map(t => (
             <tr key={t.id}>
-              <td><strong>{t.name}</strong></td>
+              <td><strong>{t.nama_panggilan || '-'}</strong></td>
+              <td>{t.name}</td>
               <td>{t.phone || '-'}</td>
               <td>{t.email || '-'}</td>
               <td>{t.id_card_number || '-'}</td>

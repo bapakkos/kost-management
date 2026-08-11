@@ -71,7 +71,7 @@ exports.getMonthView = async (req, res) => {
         room_type: room.RoomType ? room.RoomType.name : null,
         room_type_id: room.room_type_id,
         status: room.status,
-        tenant: contract ? (contract.Tenant ? contract.Tenant.name : null) : null,
+        tenant: contract ? (contract.Tenant ? (contract.Tenant.nama_panggilan || contract.Tenant.name) : null) : null,
         tenant_id: contract ? contract.tenant_id : null,
         check_in: contract ? contract.start_date : null,
         check_out: contract ? contract.end_date : null,
@@ -113,7 +113,7 @@ exports.getBookings = async (req, res) => {
 
     const result = bookings.map(b => ({
       contract_id: b.id,
-      tenant_name: b.Tenant ? b.Tenant.name : null,
+      tenant_name: b.Tenant ? (b.Tenant.nama_panggilan || b.Tenant.name) : null,
       tenant_id: b.tenant_id,
       room_type: b.Room && b.Room.RoomType ? b.Room.RoomType.name : null,
       room_number: b.Room ? b.Room.room_number : null,

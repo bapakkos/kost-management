@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
-const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
+const formatRp = (n) => Number(n).toLocaleString('id-ID');
 
 export default function PriceSchemes() {
   const [schemes, setSchemes] = useState([]);
@@ -9,9 +9,9 @@ export default function PriceSchemes() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [rateForm, setRateForm] = useState({ schemeId: null, room_type_id: '', monthly_price: '' });
+  const [editingPrices, setEditingPrices] = useState({});
 
-  const fetch = async () => {
+  const fetch = useCallback(async () => {
     try {
       const [sRes, rtRes] = await Promise.all([
         api.get('/price-schemes'),
@@ -24,9 +24,20 @@ export default function PriceSchemes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetch(); }, [fetch]);
+
+  useEffect(() => {
+    const initial = {};
+    schemes.forEach(s => {
+      roomTypes.forEach(rt => {
+        const rate = s.PricingSchemeRates?.find(r => r.room_type_id === rt.id);
+        initial[`${s.id}-${rt.id}`] = rate ? String(rate.monthly_price) : '';
+      });
+    });
+    setEditingPrices(initial);
+  }, [schemes, roomTypes]);
 
   const handleCreateScheme = async (e) => {
     e.preventDefault();
@@ -50,17 +61,22 @@ export default function PriceSchemes() {
     }
   };
 
-  const handleAddRate = async (schemeId) => {
-    if (!rateForm.room_type_id || !rateForm.monthly_price) return;
+  const handlePriceChange = (schemeId, roomTypeId, value) => {
+    setEditingPrices(prev => ({ ...prev, [`${schemeId}-${roomTypeId}`]: value }));
+  };
+
+  const handlePriceSave = async (schemeId, roomTypeId) => {
+    const key = `${schemeId}-${roomTypeId}`;
+    const value = editingPrices[key];
+    if (value === '' || isNaN(parseFloat(value))) return;
     try {
       await api.post(`/price-schemes/${schemeId}/rates`, {
-        room_type_id: rateForm.room_type_id,
-        monthly_price: parseFloat(rateForm.monthly_price),
+        room_type_id: roomTypeId,
+        monthly_price: parseFloat(value),
       });
-      setRateForm({ schemeId: null, room_type_id: '', monthly_price: '' });
       fetch();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed');
+      setError(err.response?.data?.error || 'Failed to save price');
     }
   };
 
@@ -86,50 +102,43 @@ export default function PriceSchemes() {
             <button className="btn btn-danger btn-sm" onClick={() => handleDeleteScheme(s.id)}>Delete</button>
           </div>
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Room Type</th>
-                <th>Monthly Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.PricingSchemeRates?.map(r => (
-                <tr key={r.id}>
-                  <td>{r.RoomType?.name || r.room_type_id}</td>
-                  <td>{formatRp(r.monthly_price)}</td>
+          {roomTypes.length === 0 ? (
+            <p style={{ color: '#bbb', fontStyle: 'italic' }}>No room types available</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Room Type</th>
+                  <th>Monthly Price</th>
                 </tr>
-              ))}
-              {(!s.PricingSchemeRates || s.PricingSchemeRates.length === 0) && (
-                <tr><td colSpan="2" style={{ color: '#bbb', fontStyle: 'italic' }}>No rates yet</td></tr>
-              )}
-            </tbody>
-          </table>
-
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Room Type</label>
-              <select
-                value={rateForm.schemeId === s.id ? rateForm.room_type_id : ''}
-                onChange={e => setRateForm({ schemeId: s.id, room_type_id: e.target.value, monthly_price: rateForm.schemeId === s.id ? rateForm.monthly_price : '' })}
-              >
-                <option value="">-- Select --</option>
-                {roomTypes.map(rt => (
-                  <option key={rt.id} value={rt.id}>{rt.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Monthly Price</label>
-              <input
-                type="number"
-                placeholder="0"
-                value={rateForm.schemeId === s.id ? rateForm.monthly_price : ''}
-                onChange={e => setRateForm({ schemeId: s.id, room_type_id: rateForm.schemeId === s.id ? rateForm.room_type_id : '', monthly_price: e.target.value })}
-              />
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={() => handleAddRate(s.id)}>Add Rate</button>
-          </div>
+              </thead>
+              <tbody>
+                {roomTypes.map(rt => {
+                  const key = `${s.id}-${rt.id}`;
+                  const price = editingPrices[key] ?? '';
+                  return (
+                    <tr key={rt.id}>
+                      <td>{rt.name}</td>
+                      <td style={{ padding: '4px 8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ minWidth: 24 }}>Rp</span>
+                          <input
+                            type="number"
+                            value={price}
+                            onChange={e => handlePriceChange(s.id, rt.id, e.target.value)}
+                            onBlur={() => handlePriceSave(s.id, rt.id)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); } }}
+                            placeholder="0"
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       ))}
     </div>

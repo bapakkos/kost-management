@@ -108,7 +108,7 @@ export default function MonthlyBillings() {
             <tr key={b.id}>
               <td>{MONTHS[b.period_month - 1]} {b.period_year}</td>
               <td>{b.RentalContract?.Room?.room_number || '-'}</td>
-              <td>{b.RentalContract?.Tenant?.name || '-'}</td>
+              <td>{b.RentalContract?.Tenant?.nama_panggilan || b.RentalContract?.Tenant?.name || '-'}</td>
               <td>{formatRp(b.base_rent)}</td>
               <td>{formatRp(b.addon_parkir)}</td>
               <td>{formatRp(b.addon_tv)}</td>

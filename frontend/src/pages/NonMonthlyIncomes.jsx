@@ -91,7 +91,7 @@ export default function NonMonthlyIncomes() {
             <label>Tenant</label>
             <select value={form.tenant_id} onChange={e => setForm({ ...form, tenant_id: e.target.value })} required>
               <option value="">-- Select --</option>
-              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {tenants.map(t => <option key={t.id} value={t.id}>{t.nama_panggilan || t.name}</option>)}
             </select>
           </div>
           <div className="form-group" style={{ flex: 1 }}>
@@ -159,7 +159,7 @@ export default function NonMonthlyIncomes() {
           {incomes.map(inc => (
             <tr key={inc.id}>
               <td>{new Date(inc.transaction_date).toLocaleDateString('id-ID')}</td>
-              <td>{inc.Tenant?.name || '-'}</td>
+              <td>{inc.Tenant?.nama_panggilan || inc.Tenant?.name || '-'}</td>
               <td>{inc.Room?.room_number || '-'}</td>
               <td>{inc.category}</td>
               <td>{inc.description || '-'}</td>
