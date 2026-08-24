@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
 const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
@@ -10,6 +10,7 @@ export default function BankReconciliation() {
   const [monthlyBillings, setMonthlyBillings] = useState([]);
   const [nonMonthlyIncomes, setNonMonthlyIncomes] = useState([]);
   const [senderRegistry, setSenderRegistry] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [msg, setMsg] = useState('');
@@ -24,6 +25,16 @@ export default function BankReconciliation() {
   const [forceReconcile, setForceReconcile] = useState(false);
   const [forceNotes, setForceNotes] = useState('');
   const [reconciling, setReconciling] = useState(false);
+  const [autoReconciling, setAutoReconciling] = useState(false);
+  const [autoResult, setAutoResult] = useState(null);
+  const [linking, setLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState(null);
+  const [showSenders, setShowSenders] = useState(false);
+  const [senderEdits, setSenderEdits] = useState({});
+  const [importingMapping, setImportingMapping] = useState(false);
+  const [mappingResult, setMappingResult] = useState(null);
+  const fileInputRef = useRef(null);
+  const mappingFileRef = useRef(null);
 
   const mutationTotal = selectedMutations.reduce((sum, id) => {
     const m = mutations.find(m => m.id === id);
@@ -48,24 +59,26 @@ export default function BankReconciliation() {
     setLoading(true);
     setError('');
     try {
-      const mutationParams = { type: 'CREDIT', category: 'operational' };
+      const mutationParams = { type: 'credit', category: 'operational' };
       if (showReconciled) {
         mutationParams.is_reconciled = 1;
       } else {
         mutationParams.is_reconciled = 0;
       }
 
-      const [mRes, mbRes, nmiRes, srRes] = await Promise.all([
+      const [mRes, mbRes, nmiRes, srRes, tRes] = await Promise.all([
         api.get('/bank-mutations', { params: mutationParams }),
         api.get('/monthly-billings', { params: { is_paid: 0 } }),
         api.get('/non-monthly-incomes'),
-        api.get('/bank-mutations/sender-registry').catch(() => ({ data: [] })),
+        api.get('/sender-registry').catch(() => ({ data: [] })),
+        api.get('/tenants'),
       ]);
 
       setMutations(mRes.data);
       setMonthlyBillings(mbRes.data);
       setNonMonthlyIncomes((nmiRes.data || []).filter(i => !i.is_paid));
       setSenderRegistry(srRes.data || []);
+      setTenants(tRes.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load');
     } finally {
@@ -75,13 +88,12 @@ export default function BankReconciliation() {
 
   useEffect(() => { fetch(); }, [showReconciled]);
 
-  const handleImportCsv = async () => {
-    if (!csvText.trim()) return;
+  const runImport = async (text) => {
     setImporting(true);
     setError('');
     setImportResult(null);
     try {
-      const { data } = await api.post('/bank-mutations/import-csv', { csv: csvText });
+      const { data } = await api.post('/bank-mutations/import-csv', { csv: text });
       setImportResult(data);
       setMsg(`Imported: ${data.created || 0} new, ${data.skipped || 0} skipped`);
       setCsvText('');
@@ -90,6 +102,45 @@ export default function BankReconciliation() {
       setError(err.response?.data?.error || 'Import failed');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleImportCsv = () => {
+    if (!csvText.trim()) return;
+    runImport(csvText);
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        setError('File CSV kosong');
+      } else {
+        setCsvText(text);
+        await runImport(text);
+      }
+    } catch {
+      setError('Gagal membaca file CSV');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleAutoReconcile = async () => {
+    setAutoReconciling(true);
+    setError('');
+    setAutoResult(null);
+    try {
+      const { data } = await api.post('/bank-mutations/auto-reconcile');
+      setAutoResult(data);
+      setMsg(`Auto-reconciled: ${data.auto_reconciled || 0}, unmatched: ${data.unmatched || 0}, errors: ${data.errors || 0}`);
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Auto-reconcile failed');
+    } finally {
+      setAutoReconciling(false);
     }
   };
 
@@ -201,8 +252,61 @@ export default function BankReconciliation() {
   const isSenderKnown = (senderName) => {
     if (!senderName || senderRegistry.length === 0) return false;
     return senderRegistry.some(s =>
-      s.name && senderName.toLowerCase().includes(s.name.toLowerCase())
+      s.tenant_id && s.sender_name && senderName.toLowerCase().includes(s.sender_name.toLowerCase())
     );
+  };
+
+  const handleAutoLink = async () => {
+    setLinking(true);
+    setError('');
+    setLinkResult(null);
+    try {
+      const { data } = await api.post('/sender-registry/auto-link');
+      setLinkResult(data);
+      setMsg(`Auto-link: ${data.linked || 0} nama terhubung ke tenant, ${data.skipped_count || 0} perlu review, dari ${data.total_unlinked || 0} nama belum ter-link.`);
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Auto-link failed');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleSaveSenderLink = async (senderId) => {
+    const tenantId = senderEdits[senderId];
+    if (tenantId === undefined) return;
+    try {
+      await api.put(`/sender-registry/${senderId}`, { tenant_id: tenantId || null });
+      setSenderEdits(prev => { const n = { ...prev }; delete n[senderId]; return n; });
+      setMsg(`Nama rekening di-link.`);
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Gagal update');
+    }
+  };
+
+  const handleImportMapping = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportingMapping(true);
+    setError('');
+    setMappingResult(null);
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        setError('File mapping kosong');
+      } else {
+        const { data } = await api.post('/sender-registry/import-mapping', { csv: text });
+        setMappingResult(data);
+        setMsg(`Mapping import: ${data.linked || 0} baru ter-link, ${data.already_linked || 0} sudah, ${data.no_mapping_row || 0} tidak ada di file, ${data.no_resolve || 0} tidak ter-resolve.`);
+        fetch();
+      }
+    } catch {
+      setError('Gagal import file mapping');
+    } finally {
+      setImportingMapping(false);
+      e.target.value = '';
+    }
   };
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -216,24 +320,256 @@ export default function BankReconciliation() {
       <div className="card">
         <h3>Import BCA Bank CSV</h3>
         <div className="form-group">
-          <label>Paste CSV mutations below</label>
+          <label>Pilih file CSV dari komputer</label>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+            <strong>Langkah 1:</strong> Import mutasi rekening BCA. Setelah ini, mutasi muncul di daftar Unreconciled Mutations di bawah.
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? 'Importing...' : 'Pilih File CSV'}
+          </button>
+        </div>
+        <div className="form-group">
+          <label>Atau paste CSV mutations di bawah</label>
           <textarea
             value={csvText}
             onChange={e => setCsvText(e.target.value)}
             rows={6}
             placeholder="Tanggal, Keterangan, CBG, Mutasi, ..."
           />
+          <button
+            className="btn btn-secondary"
+            onClick={handleImportCsv}
+            disabled={importing || !csvText.trim()}
+            style={{ marginTop: 8 }}
+          >
+            Import dari Text
+          </button>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleImportCsv}
-          disabled={importing || !csvText.trim()}
-        >
-          {importing ? 'Importing...' : 'Import CSV'}
-        </button>
         {importResult && (
           <div style={{ marginTop: 8, fontSize: 13, color: '#52c41a' }}>
-            Created: {importResult.created || 0}, Skipped: {importResult.skipped || 0}, Errors: {importResult.errors || 0}
+            Created: {importResult.created ?? importResult.inserted ?? 0}, Skipped: {importResult.skipped || 0}, Errors: {importResult.errors || 0}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Kelola Sender Registry (Nama Pengirim)</h3>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+          <strong>Langkah 1.5:</strong> Hubungkan nama pengirim mutasi bank ke tenant. Klik <em>Auto-link</em> untuk
+          mencocokkan otomatis (berdasarkan nama panggilan tenant). Yang tidak cocok otomatis bisa di-link manual
+          di tabel bawah.
+        </div>
+        {(() => {
+          const total = senderRegistry.length;
+          const linked = senderRegistry.filter(s => s.tenant_id).length;
+          const unlinked = total - linked;
+          return (
+            <div style={{ fontSize: 13, marginBottom: 8 }}>
+              <strong>{linked}</strong> ter-link, <strong>{unlinked}</strong> belum ter-link
+              {total > 0 && <span> (dari {total} nama)</span>}
+            </div>
+          );
+        })()}
+        <button
+          className="btn btn-primary"
+          onClick={handleAutoLink}
+          disabled={linking || senderRegistry.filter(s => !s.tenant_id).length === 0}
+        >
+          {linking ? 'Memproses...' : 'Auto-link (fuzzy match)'}
+        </button>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          ref={mappingFileRef}
+          style={{ display: 'none' }}
+          onChange={handleImportMapping}
+        />
+        <button
+          className="btn btn-success"
+          style={{ marginLeft: 8 }}
+          onClick={() => mappingFileRef.current?.click()}
+          disabled={importingMapping}
+        >
+          {importingMapping ? 'Memproses...' : 'Import file mapping'}
+        </button>
+        <span style={{ fontSize: 12, color: '#999', marginLeft: 8 }}>
+          (file CSV: nama1;nama2;no kamar)
+        </span>
+        {mappingResult && (
+          <div style={{ marginTop: 8, fontSize: 13, color: '#52c41a' }}>
+            Mapping: {mappingResult.linked || 0} baru ter-link
+            {mappingResult.already_linked > 0 && `, ${mappingResult.already_linked} sudah`}
+            {mappingResult.no_mapping_row > 0 && `, ${mappingResult.no_mapping_row} tidak ada di file`}
+            {mappingResult.no_resolve > 0 && `, ${mappingResult.no_resolve} tidak ter-resolve`}.
+            {mappingResult.details && mappingResult.details.length > 0 && (
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ cursor: 'pointer' }}>Ter-link ({mappingResult.details.length})</summary>
+                <ul style={{ maxHeight: 200, overflow: 'auto' }}>
+                  {mappingResult.details.map((d, i) => (
+                    <li key={i}>{d.sender_name} → {d.tenant_nama} (id {d.tenant_id}, via {d.via}{d.room ? ' room ' + d.room : ''})</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {mappingResult.unresolved && mappingResult.unresolved.length > 0 && (
+              <details style={{ marginTop: 4 }}>
+                <summary style={{ cursor: 'pointer' }}>Belum ter-link ({mappingResult.unresolved.length})</summary>
+                <ul style={{ maxHeight: 200, overflow: 'auto' }}>
+                  {mappingResult.unresolved.map((u, i) => (
+                    <li key={i}>{u.sender_name} — {u.reason}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+        {linkResult && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 14, color: '#52c41a' }}>
+              {linkResult.linked || 0} nama baru ter-link ke tenant.
+              {linkResult.skipped_count > 0 && ` ${linkResult.skipped_count} lainnya perlu review/manual.`}
+            </div>
+            {linkResult.details && linkResult.details.length > 0 && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13 }}>Ter-link ({linkResult.details.length})</summary>
+                <ul style={{ fontSize: 12, maxHeight: 200, overflow: 'auto' }}>
+                  {linkResult.details.map((d, i) => (
+                    <li key={i}>{d.sender_name} → {d.tenant_nama} (id {d.tenant_id})</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {linkResult.skipped && linkResult.skipped.length > 0 && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13 }}>Saran medium-confidence untuk review ({linkResult.skipped.length})</summary>
+                <ul style={{ fontSize: 12, maxHeight: 200, overflow: 'auto' }}>
+                  {linkResult.skipped.map((d, i) => (
+                    <li key={i}>{d.sender_name} → {d.tenant_nama} (id {d.suggested_tenant_id}, {d.confidence})</li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+        <div style={{ marginTop: 12 }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowSenders(s => !s)}
+          >
+            {showSenders ? 'Sembunyikan' : 'Tampilkan'} tabel nama ({senderRegistry.length})
+          </button>
+        </div>
+        {showSenders && (
+          <table className="data-table" style={{ marginTop: 8 }}>
+            <thead>
+              <tr>
+                <th>Nama Pengirim</th>
+                <th>Tenant</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {senderRegistry.map(s => {
+                const current = senderEdits[s.id] !== undefined ? senderEdits[s.id] : (s.tenant_id || '');
+                return (
+                  <tr key={s.id}>
+                    <td>{s.sender_name}</td>
+                    <td>
+                      <select
+                        value={current}
+                        onChange={e => setSenderEdits(prev => ({ ...prev, [s.id]: e.target.value ? Number(e.target.value) : null }))}
+                        style={{ width: '100%' }}
+                      >
+                        <option value="">{current ? '— hapus link —' : '— belum ter-link —'}</option>
+                        {tenants.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.nama_panggilan}{t.name && t.name !== t.nama_panggilan ? ` (${t.name})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={senderEdits[s.id] === undefined || String(senderEdits[s.id]) === String(s.tenant_id || '')}
+                        onClick={() => handleSaveSenderLink(s.id)}
+                      >
+                        Simpan
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Rekonsiliasi Otomatis</h3>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
+          <strong>Langkah 2:</strong> Cocokkan mutasi dengan database nama rekening (sender registry).
+          Mutasi yang <em>pasti cocok</em> (nama pengirim ada &amp; terhubung ke tenant + nominal cocok tagihan) otomatis direkonsiliasi.
+          Sisanya tetap di list untuk rekonsiliasi manual.
+        </div>
+        <button
+          className="btn btn-success"
+          onClick={handleAutoReconcile}
+          disabled={autoReconciling || loading || mutations.length === 0}
+        >
+          {autoReconciling ? 'Memproses...' : 'Rekonsiliasi Otomatis'}
+        </button>
+        {autoResult && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 14, marginBottom: 8 }}>
+              <strong>Hasil:</strong> {autoResult.auto_reconciled || 0} otomatis terekonsiliasi,
+              {' '}{autoResult.unmatched || 0} tidak cocok (perlu manual),
+              {' '}{autoResult.errors || 0} error, dari {autoResult.total || 0} mutasi.
+            </div>
+            {autoResult.details && autoResult.details.length > 0 && (
+              <details>
+                <summary style={{ cursor: 'pointer', fontSize: 13 }}>Rincian per mutasi ({autoResult.details.length})</summary>
+                <table className="data-table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Sender</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {autoResult.details.map(d => (
+                      <tr key={d.mutation_id}>
+                        <td>{d.date}</td>
+                        <td>{d.sender_name || '-'}</td>
+                        <td>{formatRp(d.amount)}</td>
+                        <td style={{
+                          color: d.status === 'reconciled' ? '#52c41a' : (d.status === 'error' ? '#ff4d4f' : '#faad14')
+                        }}>
+                          {d.status === 'reconciled' ? `Reconciled (${d.items} item, nota ${d.receipt_no})` :
+                           d.status === 'no_sender' ? 'Tidak ada nama pengirim' :
+                           d.status === 'no_tenant' ? 'Nama tidak ada di registry' :
+                           d.status === 'no_billing_match' ? 'Tenant cocok, tagihan tidak cocok' :
+                           d.status === 'error' ? `Error: ${d.error}` : d.status}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            )}
           </div>
         )}
       </div>
@@ -254,6 +590,9 @@ export default function BankReconciliation() {
 
       {!showReconciled && (
         <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ width: '100%', fontSize: 13, color: '#666', marginBottom: 4 }}>
+            <strong>Langkah 3 (manual):</strong> Centang mutasi di kiri &amp; tagihan/pemasukan di kanan, pastikan jumlahnya sama ( Amounts match ), lalu klik Reconcile.
+          </div>
           <div style={{ flex: 1 }}>
             <strong>Selected Mutations:</strong> {selectedMutations.length} ({formatRp(mutationTotal)})
           </div>

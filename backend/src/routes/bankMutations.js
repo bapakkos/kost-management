@@ -5,6 +5,7 @@ const { auth, adminOnly } = require('../middleware/auth');
 router.get('/unreconciled', auth, ctrl.getUnreconciled);
 router.get('/reconciled', auth, ctrl.getReconciled);
 router.get('/auto-match', auth, ctrl.autoMatch);
+router.post('/auto-reconcile', auth, ctrl.autoReconcile);
 router.post('/import-csv', auth, ctrl.importCsv);
 router.put('/:id/category', auth, ctrl.updateCategory);
 router.get('/', auth, ctrl.getAll);

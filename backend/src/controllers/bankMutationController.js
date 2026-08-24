@@ -1,6 +1,12 @@
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
 const { parseCSV } = require('../utils/csvParser');
-const { BankMutation, Tenant, TenantBankAccount, SenderRegistry } = require('../models');
+const { calculateDiscount } = require('../utils/discountCalculator');
+const {
+  BankMutation, Tenant, TenantBankAccount, SenderRegistry,
+  RentalContract, MonthlyBilling, NonMonthlyIncome,
+  PaymentReceipt, PaymentReceiptItem, ReconciliationLink,
+} = require('../models');
 
 exports.getAll = async (req, res) => {
   try {
@@ -65,10 +71,10 @@ exports.getReconciled = async (req, res) => {
 
 exports.importCsv = async (req, res) => {
   try {
-    const { csvText } = req.body;
-    if (!csvText) return res.status(400).json({ error: 'csvText is required' });
+    const csv = req.body?.csv ?? req.body?.csvText;
+    if (!csv) return res.status(400).json({ error: 'csv is required' });
 
-    const parsed = parseCSV(csvText);
+    const parsed = parseCSV(csv);
     if (parsed.length === 0) return res.status(400).json({ error: 'No valid mutations found' });
 
     const withSenderNames = new Set();
@@ -100,7 +106,7 @@ exports.importCsv = async (req, res) => {
       inserted++;
     }
 
-    res.json({ inserted, skipped, totalParsed: parsed.length, newSenderCount: newSenders.length });
+    res.json({ created: inserted, inserted, skipped, totalParsed: parsed.length, newSenderCount: newSenders.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -132,6 +138,197 @@ exports.autoMatch = async (req, res) => {
       }
     }
     res.json(suggestions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const AMOUNT_TOLERANCE = 100;
+
+function findAmountMatch(amount, billings, incomes) {
+  const amt = parseFloat(amount);
+
+  for (const b of billings) {
+    if (Math.abs(parseFloat(b.total_amount) - amt) <= AMOUNT_TOLERANCE) {
+      return { billings: [b], incomes: [], discount: 0 };
+    }
+  }
+  for (const inc of incomes) {
+    if (Math.abs(parseFloat(inc.total_amount) - amt) <= AMOUNT_TOLERANCE) {
+      return { billings: [], incomes: [inc], discount: 0 };
+    }
+  }
+
+  const sorted = [...billings].sort((a, b) => {
+    if (a.period_year !== b.period_year) return a.period_year - b.period_year;
+    return a.period_month - b.period_month;
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const run = [sorted[i]];
+    for (let j = i + 1; j < sorted.length; j++) {
+      const prev = run[run.length - 1];
+      const curr = sorted[j];
+      const expMonth = prev.period_month === 12 ? 1 : prev.period_month + 1;
+      const expYear = prev.period_month === 12 ? prev.period_year + 1 : prev.period_year;
+      if (curr.period_month !== expMonth || curr.period_year !== expYear) break;
+
+      run.push(curr);
+      const months = run.length;
+      const sum = run.reduce((s, b) => s + parseFloat(b.total_amount), 0);
+
+      const promo = calculateDiscount(months);
+      if (promo > 0 && Math.abs((sum - promo) - amt) <= AMOUNT_TOLERANCE) {
+        return { billings: [...run], incomes: [], discount: promo };
+      }
+      if (Math.abs(sum - amt) <= AMOUNT_TOLERANCE) {
+        return { billings: [...run], incomes: [], discount: 0 };
+      }
+    }
+  }
+
+  return null;
+}
+
+async function reconcileOne(mutation, userId) {
+  const t = await sequelize.transaction();
+  try {
+    if (!mutation.sender_name) {
+      await t.rollback();
+      return { status: 'no_sender' };
+    }
+
+    const registry = await SenderRegistry.findOne({
+      where: { sender_name: mutation.sender_name },
+      transaction: t,
+    });
+    if (!registry || !registry.tenant_id) {
+      await t.rollback();
+      return { status: 'no_tenant', sender_name: mutation.sender_name };
+    }
+    const tenantId = registry.tenant_id;
+
+    const billings = await MonthlyBilling.findAll({
+      where: { is_paid: false },
+      include: [{ model: RentalContract, where: { tenant_id: tenantId } }],
+      order: [['period_year', 'ASC'], ['period_month', 'ASC']],
+      transaction: t,
+    });
+    const incomes = await NonMonthlyIncome.findAll({
+      where: { tenant_id: tenantId, is_paid: false },
+      transaction: t,
+    });
+
+    const match = findAmountMatch(parseFloat(mutation.amount), billings, incomes);
+    if (!match) {
+      await t.rollback();
+      return { status: 'no_billing_match', tenant_id: tenantId, unpaid_billings: billings.length };
+    }
+
+    if (match.discount > 0 && match.billings.length > 0) {
+      const first = match.billings[0];
+      first.discount = (parseFloat(first.discount) || 0) + match.discount;
+      first.total_amount = parseFloat(first.total_amount) - match.discount;
+    }
+
+    const billingTotal = match.billings.reduce((s, b) => s + parseFloat(b.total_amount), 0);
+    const incomeTotal = match.incomes.reduce((s, i) => s + parseFloat(i.total_amount), 0);
+    const billsTotal = billingTotal + incomeTotal;
+    const selisih = parseFloat(mutation.amount) - billsTotal;
+
+    const contract = match.billings[0]?.RentalContract;
+    const roomId = contract?.room_id || match.incomes[0]?.room_id;
+
+    const lastReceipt = await PaymentReceipt.findOne({ order: [['id', 'DESC']], transaction: t });
+    const lastNum = lastReceipt ? parseInt((lastReceipt.receipt_no || '').replace(/\D/g, '')) || 0 : 0;
+    const receiptNo = `NOTA-${new Date(mutation.date).toISOString().slice(0, 7).replace('-', '')}-${String(lastNum + 1).padStart(4, '0')}`;
+
+    const receipt = await PaymentReceipt.create({
+      receipt_no: receiptNo,
+      payment_date: mutation.date,
+      tenant_id: tenantId,
+      room_id: roomId,
+      total_amount: parseFloat(mutation.amount),
+      discount_amount: match.discount,
+      selisih_amount: Math.abs(selisih) > 1 ? selisih : 0,
+      notes: 'Auto-reconciled (sender name match)',
+      created_by: userId,
+    }, { transaction: t });
+
+    for (const b of match.billings) {
+      await PaymentReceiptItem.create({
+        payment_receipt_id: receipt.id,
+        item_type: 'monthly_billing',
+        monthly_billing_id: b.id,
+        amount: parseFloat(b.total_amount),
+      }, { transaction: t });
+      b.is_paid = true;
+      b.paid_date = mutation.date;
+      b.paid_amount = parseFloat(b.total_amount);
+      await b.save({ transaction: t });
+    }
+    for (const inc of match.incomes) {
+      await PaymentReceiptItem.create({
+        payment_receipt_id: receipt.id,
+        item_type: 'non_monthly_income',
+        non_monthly_income_id: inc.id,
+        amount: parseFloat(inc.total_amount),
+      }, { transaction: t });
+      inc.is_paid = true;
+      inc.paid_date = mutation.date;
+      await inc.save({ transaction: t });
+    }
+
+    await ReconciliationLink.create({
+      bank_mutation_id: mutation.id,
+      target_type: 'nota',
+      target_id: receipt.id,
+    }, { transaction: t });
+    mutation.is_reconciled = true;
+    await mutation.save({ transaction: t });
+
+    await t.commit();
+    return {
+      status: 'reconciled',
+      tenant_id: tenantId,
+      receipt_no: receiptNo,
+      items: match.billings.length + match.incomes.length,
+      discount: match.discount,
+    };
+  } catch (err) {
+    try { await t.rollback(); } catch (_) {}
+    throw err;
+  }
+}
+
+exports.autoReconcile = async (req, res) => {
+  try {
+    const mutations = await BankMutation.findAll({
+      where: { is_reconciled: false, category: 'operational', type: 'credit' },
+      order: [['date', 'ASC'], ['id', 'ASC']],
+    });
+
+    const results = { auto_reconciled: 0, unmatched: 0, errors: 0, total: mutations.length, details: [] };
+
+    for (const m of mutations) {
+      try {
+        const r = await reconcileOne(m, req.user.id);
+        results.details.push({
+          mutation_id: m.id,
+          date: m.date,
+          sender_name: m.sender_name,
+          amount: parseFloat(m.amount),
+          ...r,
+        });
+        if (r.status === 'reconciled') results.auto_reconciled++;
+        else results.unmatched++;
+      } catch (err) {
+        results.errors++;
+        results.details.push({ mutation_id: m.id, status: 'error', error: err.message });
+      }
+    }
+
+    res.json(results);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

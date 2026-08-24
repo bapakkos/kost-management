@@ -57,15 +57,22 @@ function extractSenderName(description) {
 function parseAmount(raw) {
   if (!raw) return 0;
   raw = String(raw).trim();
-  if (/^-?\d+(\.\d+)?$/.test(raw)) {
+  if (raw === '') return 0;
+
+  // Indonesian format: groups of 3 digits separated by dots, optional comma decimal
+  // e.g. "16.000.000" / "57.294" / "2.500" / "1.234,50"
+  if (/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(raw)) {
+    return parseFloat(raw.replace(/\./g, '').replace(',', '.'));
+  }
+  // English decimal with up to 2 digits after dot = cents, e.g. "16000000.00"
+  if (/^-?\d+\.\d{1,2}$/.test(raw)) {
     return parseFloat(raw);
   }
-  if (/^-?\d+,\d+$/.test(raw)) {
-    return parseFloat(raw.replace(',', '.'));
+  // Plain integer
+  if (/^-?\d+$/.test(raw)) {
+    return parseFloat(raw);
   }
-  if (raw.includes('E') || raw.includes('e')) {
-    return parseFloat(raw.replace(',', '.'));
-  }
+  // Fallback: strip thousand dots, convert comma decimal
   const stripped = raw.replace(/\./g, '').replace(',', '.');
   return parseFloat(stripped);
 }
@@ -84,11 +91,23 @@ function parseDate(raw) {
   return null;
 }
 
+function normalizeHeader(h) {
+  if (!h) return null;
+  const s = h.trim().toLowerCase();
+  if (s === 'tanggal' || s.startsWith('tanggal')) return 'date';
+  if (s === 'keterangan') return 'description';
+  if (s === 'mutasi') return 'amount';
+  if (s === 'jenis' || s === 'jenis transaksi' || s.startsWith('jenis')) return 'type';
+  if (s === 'saldo') return 'balance';
+  if (s === 'cabang' || s === 'cbg') return 'branch';
+  if (s === 'no') return 'no';
+  return null;
+}
+
 function parseCSV(csvText) {
   const lines = csvText.split(/\r?\n/);
   const mutations = [];
-  let headerFound = false;
-  let headerCols = null;
+  let colMap = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -96,21 +115,23 @@ function parseCSV(csvText) {
 
     const cols = trimmed.split(';');
 
-    if (!headerFound) {
-      if (cols[0] === 'No' && cols[1] === 'Tanggal') {
-        headerFound = true;
-        headerCols = cols;
-        continue;
+    if (!colMap) {
+      const map = {};
+      cols.forEach((c, i) => {
+        const key = normalizeHeader(c);
+        if (key && map[key] === undefined) map[key] = i;
+      });
+      if (map.date !== undefined && map.amount !== undefined) {
+        colMap = map;
       }
+      continue;
     }
 
-    if (!headerFound) continue;
-
-    const tanggal = cols[1];
-    const keterangan = cols[2];
-    const mutasi = cols[4];
-    const jenis = cols[5];
-    const saldo = cols[6];
+    const tanggal = cols[colMap.date];
+    const keterangan = colMap.description !== undefined ? cols[colMap.description] : '';
+    const mutasi = cols[colMap.amount];
+    const jenis = colMap.type !== undefined ? cols[colMap.type] : '';
+    const saldo = colMap.balance !== undefined ? cols[colMap.balance] : '';
 
     if (!tanggal || !mutasi || !jenis) continue;
 
