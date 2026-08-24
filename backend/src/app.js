@@ -8,11 +8,9 @@ const sequelize = require('./config/database');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-// Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/room-types', require('./routes/roomTypes'));
 app.use('/api/rooms', require('./routes/rooms'));
@@ -25,14 +23,15 @@ app.use('/api/monthly-billings', require('./routes/monthlyBillings'));
 app.use('/api/non-monthly-incomes', require('./routes/nonMonthlyIncomes'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/bank-mutations', require('./routes/bankMutations'));
+app.use('/api/reconcile', require('./routes/reconciliation'));
+app.use('/api/reports', require('./routes/reports'));
+app.use('/api/sender-registry', require('./routes/senderRegistry'));
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Sync database and start server
-sequelize.sync({ force: false }).then(() => {
+sequelize.query('PRAGMA foreign_keys = ON').then(() => sequelize.sync({ force: false })).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

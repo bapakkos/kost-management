@@ -1,6 +1,8 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+const fs = require('fs');
+
 const sequelize = require('../src/config/database');
 const {
   User,
@@ -17,8 +19,35 @@ const ROOM_NUMBERS = {
   3: [301, 302, 303, 305, 306, 307, 308, 309, 310, 311, 312, 314, 315, 316, 317, 318, 319, 320, 321, 322],
 };
 
+async function confirmDestroy() {
+  if (process.argv.includes('--force') && process.env.CONFIRM_DESTROY === 'yes') {
+    console.log('Bypassing confirmation via --force + CONFIRM_DESTROY=yes');
+    return;
+  }
+  const DB_PATH = path.join(__dirname, '..', '..', 'database', 'kost.db');
+  console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+  console.log('!! PERINGATAN: script ini MENGHAPUS SELURUH DATA DATABASE !!');
+  console.log(`!! Target: ${DB_PATH}`);
+  if (fs.existsSync(DB_PATH)) {
+    const stats = fs.statSync(DB_PATH);
+    console.log(`!! File DB ada (${(stats.size / 1024).toFixed(1)} KB, modifikasi ${stats.mtime.toLocaleString()})`);
+  }
+  console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+  console.log('Ketik HAPUS (huruf besar) lalu Enter untuk melanjutkan:');
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise(resolve => rl.question('> ', resolve));
+  rl.close();
+  if (answer.trim() !== 'HAPUS') {
+    console.log('Dibatalkan. Database TIDAK diubah.');
+    process.exit(1);
+  }
+}
+
 async function seed() {
+  await confirmDestroy();
+  await sequelize.query('PRAGMA foreign_keys = OFF');
   await sequelize.sync({ force: true });
+  await sequelize.query('PRAGMA foreign_keys = ON');
   console.log('Database reset');
 
   // --- Users ---

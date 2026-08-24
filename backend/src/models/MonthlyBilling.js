@@ -17,6 +17,7 @@ const MonthlyBilling = sequelize.define('MonthlyBilling', {
   is_paid: { type: DataTypes.BOOLEAN, defaultValue: false },
   paid_date: { type: DataTypes.DATEONLY },
   paid_amount: { type: DataTypes.DECIMAL(10, 2) },
+  notes: { type: DataTypes.TEXT },
 }, { tableName: 'monthly_billings', timestamps: true, underscored: true });
 
 module.exports = MonthlyBilling;

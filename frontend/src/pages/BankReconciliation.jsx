@@ -3,24 +3,69 @@ import api from '../services/api';
 
 const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export default function BankReconciliation() {
   const [mutations, setMutations] = useState([]);
-  const [payments, setPayments] = useState([]);
+  const [monthlyBillings, setMonthlyBillings] = useState([]);
+  const [nonMonthlyIncomes, setNonMonthlyIncomes] = useState([]);
+  const [senderRegistry, setSenderRegistry] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showReconciled, setShowReconciled] = useState(false);
   const [msg, setMsg] = useState('');
-  const [importForm, setImportForm] = useState({ date: '', amount: '', description: '', source_account: '' });
+  const [showReconciled, setShowReconciled] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [selectedMutations, setSelectedMutations] = useState([]);
+  const [selectedBillings, setSelectedBillings] = useState([]);
+  const [selectedIncomes, setSelectedIncomes] = useState([]);
+  const [billTab, setBillTab] = useState('monthly');
+  const [forceReconcile, setForceReconcile] = useState(false);
+  const [forceNotes, setForceNotes] = useState('');
+  const [reconciling, setReconciling] = useState(false);
+
+  const mutationTotal = selectedMutations.reduce((sum, id) => {
+    const m = mutations.find(m => m.id === id);
+    return sum + (m ? Number(m.amount) : 0);
+  }, 0);
+
+  const selectedBillingTotal = selectedBillings.reduce((sum, id) => {
+    const b = monthlyBillings.find(b => b.id === id);
+    return sum + (b ? Number(b.total_amount) : 0);
+  }, 0);
+
+  const selectedIncomeTotal = selectedIncomes.reduce((sum, id) => {
+    const inc = nonMonthlyIncomes.find(i => i.id === id);
+    return sum + (inc ? Number(inc.total_amount) : 0);
+  }, 0);
+
+  const billTotal = selectedBillingTotal + selectedIncomeTotal;
+  const amountsMatch = mutationTotal === billTotal;
+  const hasSelection = selectedMutations.length > 0 && (selectedBillings.length > 0 || selectedIncomes.length > 0);
 
   const fetch = async () => {
     setLoading(true);
+    setError('');
     try {
-      const [mRes, pRes] = await Promise.all([
-        api.get(showReconciled ? '/bank-mutations/reconciled' : '/bank-mutations/unreconciled'),
-        api.get('/payments'),
+      const mutationParams = { type: 'CREDIT', category: 'operational' };
+      if (showReconciled) {
+        mutationParams.is_reconciled = 1;
+      } else {
+        mutationParams.is_reconciled = 0;
+      }
+
+      const [mRes, mbRes, nmiRes, srRes] = await Promise.all([
+        api.get('/bank-mutations', { params: mutationParams }),
+        api.get('/monthly-billings', { params: { is_paid: 0 } }),
+        api.get('/non-monthly-incomes'),
+        api.get('/bank-mutations/sender-registry').catch(() => ({ data: [] })),
       ]);
+
       setMutations(mRes.data);
-      setPayments(pRes.data);
+      setMonthlyBillings(mbRes.data);
+      setNonMonthlyIncomes((nmiRes.data || []).filter(i => !i.is_paid));
+      setSenderRegistry(srRes.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load');
     } finally {
@@ -30,102 +75,409 @@ export default function BankReconciliation() {
 
   useEffect(() => { fetch(); }, [showReconciled]);
 
-  const handleReconcile = async (mutationId) => {
-    const paymentId = prompt('Payment Receipt ID to link?');
-    if (!paymentId) return;
+  const handleImportCsv = async () => {
+    if (!csvText.trim()) return;
+    setImporting(true);
+    setError('');
+    setImportResult(null);
     try {
-      await api.put(`/bank-mutations/${mutationId}/reconcile`, { payment_receipt_id: parseInt(paymentId) });
-      setMsg('Reconciled successfully');
-      fetch();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed');
-    }
-  };
-
-  const handleImport = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/bank-mutations/import-csv', {
-        mutations: [{ ...importForm, amount: parseFloat(importForm.amount) }],
-      });
-      setMsg('Imported 1 mutation');
-      setImportForm({ date: '', amount: '', description: '', source_account: '' });
+      const { data } = await api.post('/bank-mutations/import-csv', { csv: csvText });
+      setImportResult(data);
+      setMsg(`Imported: ${data.created || 0} new, ${data.skipped || 0} skipped`);
+      setCsvText('');
       fetch();
     } catch (err) {
       setError(err.response?.data?.error || 'Import failed');
+    } finally {
+      setImporting(false);
     }
+  };
+
+  const toggleMutation = (id) => {
+    setSelectedMutations(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleBilling = (id) => {
+    setSelectedBillings(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleIncome = (id) => {
+    setSelectedIncomes(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllMutations = () => {
+    if (selectedMutations.length === mutations.length) {
+      setSelectedMutations([]);
+    } else {
+      setSelectedMutations(mutations.map(m => m.id));
+    }
+  };
+
+  const detectPromo = () => {
+    if (selectedBillings.length < 6) return null;
+
+    const bills = monthlyBillings.filter(b => selectedBillings.includes(b.id));
+    if (bills.length !== selectedBillings.length) return null;
+
+    const contractId = bills[0].rental_contract_id;
+    if (!contractId || !bills.every(b => b.rental_contract_id === contractId)) return null;
+
+    const sorted = [...bills].sort((a, b) => {
+      if (a.period_year !== b.period_year) return a.period_year - b.period_year;
+      return a.period_month - b.period_month;
+    });
+
+    let consecutive = true;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      const expectedMonth = prev.period_month === 12 ? 1 : prev.period_month + 1;
+      const expectedYear = prev.period_month === 12 ? prev.period_year + 1 : prev.period_year;
+      if (curr.period_month !== expectedMonth || curr.period_year !== expectedYear) {
+        consecutive = false;
+        break;
+      }
+    }
+
+    if (!consecutive) return null;
+
+    if (sorted.length === 12) {
+      return { months: 12, discount: 1000000, label: '12 months consecutive — suggest discount Rp 1.000.000' };
+    }
+    if (sorted.length === 6) {
+      return { months: 6, discount: 500000, label: '6 months consecutive — suggest discount Rp 500.000' };
+    }
+
+    return null;
+  };
+
+  const promo = detectPromo();
+
+  const handleReconcile = async () => {
+    if (!hasSelection) return;
+    if (!forceReconcile && !amountsMatch) {
+      setError('Amounts do not match. Enable force reconcile to proceed.');
+      return;
+    }
+    if (forceReconcile && !forceNotes.trim()) {
+      setError('Notes are mandatory for force reconciliation.');
+      return;
+    }
+
+    setReconciling(true);
+    setError('');
+    try {
+      const payload = {
+        mutation_ids: selectedMutations,
+        monthly_billing_ids: selectedBillings,
+        non_monthly_income_ids: selectedIncomes,
+        force: forceReconcile,
+        notes: forceReconcile ? forceNotes : undefined,
+      };
+      if (promo) {
+        payload.suggested_discount = promo.discount;
+      }
+      await api.post('/reconcile', payload);
+      setMsg('Reconciliation successful');
+      setSelectedMutations([]);
+      setSelectedBillings([]);
+      setSelectedIncomes([]);
+      setForceReconcile(false);
+      setForceNotes('');
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Reconciliation failed');
+    } finally {
+      setReconciling(false);
+    }
+  };
+
+  const isSenderKnown = (senderName) => {
+    if (!senderName || senderRegistry.length === 0) return false;
+    return senderRegistry.some(s =>
+      s.name && senderName.toLowerCase().includes(s.name.toLowerCase())
+    );
   };
 
   if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div className="page-container">
-      <h2>🏦 Bank Reconciliation</h2>
+      <h2>Bank Reconciliation</h2>
       {error && <div style={{ color: '#ff4d4f', marginBottom: 12 }}>{error}</div>}
       {msg && <div style={{ color: '#52c41a', marginBottom: 12 }}>{msg}</div>}
 
-      <form onSubmit={handleImport} className="card">
-        <h3>Import Bank Mutation</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Date</label>
-            <input type="date" value={importForm.date} onChange={e => setImportForm({ ...importForm, date: e.target.value })} required />
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Amount</label>
-            <input type="number" value={importForm.amount} onChange={e => setImportForm({ ...importForm, amount: e.target.value })} required />
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Description</label>
-            <input value={importForm.description} onChange={e => setImportForm({ ...importForm, description: e.target.value })} />
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Source Account</label>
-            <input value={importForm.source_account} onChange={e => setImportForm({ ...importForm, source_account: e.target.value })} />
-          </div>
+      <div className="card">
+        <h3>Import BCA Bank CSV</h3>
+        <div className="form-group">
+          <label>Paste CSV mutations below</label>
+          <textarea
+            value={csvText}
+            onChange={e => setCsvText(e.target.value)}
+            rows={6}
+            placeholder="Tanggal, Keterangan, CBG, Mutasi, ..."
+          />
         </div>
-        <button className="btn btn-primary" type="submit">Import</button>
-      </form>
+        <button
+          className="btn btn-primary"
+          onClick={handleImportCsv}
+          disabled={importing || !csvText.trim()}
+        >
+          {importing ? 'Importing...' : 'Import CSV'}
+        </button>
+        {importResult && (
+          <div style={{ marginTop: 8, fontSize: 13, color: '#52c41a' }}>
+            Created: {importResult.created || 0}, Skipped: {importResult.skipped || 0}, Errors: {importResult.errors || 0}
+          </div>
+        )}
+      </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <button className={`btn btn-sm ${showReconciled ? 'btn-primary' : 'btn-danger'}`} onClick={() => setShowReconciled(!showReconciled)}>
+      <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button
+          className={`btn btn-sm ${showReconciled ? 'btn-primary' : 'btn-danger'}`}
+          onClick={() => {
+            setShowReconciled(!showReconciled);
+            setSelectedMutations([]);
+            setSelectedBillings([]);
+            setSelectedIncomes([]);
+          }}
+        >
           {showReconciled ? 'Show Unreconciled' : 'Show Reconciled'}
         </button>
       </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Amount</th>
-            <th>Description</th>
-            <th>Source</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {mutations.map(m => (
-            <tr key={m.id}>
-              <td>{new Date(m.date).toLocaleDateString('id-ID')}</td>
-              <td><strong>{formatRp(m.amount)}</strong></td>
-              <td>{m.description || '-'}</td>
-              <td>{m.source_account || '-'}</td>
-              <td className={m.is_reconciled ? 'paid' : 'unpaid'}>
-                {m.is_reconciled ? '✅ Reconciled' : '❌ Unreconciled'}
-              </td>
-              <td>
-                {!m.is_reconciled && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleReconcile(m.id)}>Reconcile</button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {mutations.length === 0 && (
-            <tr><td colSpan="6" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No mutations</td></tr>
+      {!showReconciled && (
+        <div className="card" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1 }}>
+            <strong>Selected Mutations:</strong> {selectedMutations.length} ({formatRp(mutationTotal)})
+          </div>
+          <div style={{ flex: 1 }}>
+            <strong>Selected Bills:</strong> {selectedBillings.length + selectedIncomes.length} ({formatRp(billTotal)})
+          </div>
+          {hasSelection && !amountsMatch && !forceReconcile && (
+            <div style={{ color: '#ff4d4f', fontWeight: 600 }}>
+              Amounts differ by {formatRp(Math.abs(mutationTotal - billTotal))}
+            </div>
           )}
-        </tbody>
-      </table>
+          {hasSelection && amountsMatch && (
+            <div style={{ color: '#52c41a', fontWeight: 600 }}>Amounts match</div>
+          )}
+
+          {promo && (
+            <div style={{ width: '100%', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, padding: '8px 12px', marginTop: 4 }}>
+              {promo.label}
+            </div>
+          )}
+
+          <div style={{ width: '100%', display: 'flex', gap: 8, alignItems: 'flex-end', marginTop: 8 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={forceReconcile}
+                  onChange={e => setForceReconcile(e.target.checked)}
+                />
+                Force reconcile (amounts may differ)
+              </label>
+            </div>
+            {forceReconcile && (
+              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <input
+                  type="text"
+                  placeholder="Mandatory notes for force reconcile"
+                  value={forceNotes}
+                  onChange={e => setForceNotes(e.target.value)}
+                />
+              </div>
+            )}
+            <button
+              className="btn btn-success"
+              onClick={handleReconcile}
+              disabled={!hasSelection || reconciling || (forceReconcile && !forceNotes.trim())}
+            >
+              {reconciling ? 'Reconciling...' : 'Reconcile'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ fontSize: 15, marginBottom: 8 }}>
+            {showReconciled ? 'Reconciled' : 'Unreconciled'} Mutations
+          </h3>
+          <table className="data-table">
+            <thead>
+              <tr>
+                {!showReconciled && (
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={mutations.length > 0 && selectedMutations.length === mutations.length}
+                      onChange={selectAllMutations}
+                    />
+                  </th>
+                )}
+                <th>Date</th>
+                <th>Sender</th>
+                <th>Amount</th>
+                <th>Description</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mutations.map(m => {
+                const known = isSenderKnown(m.sender_name);
+                return (
+                  <tr key={m.id} style={known ? { background: '#e6f7ff' } : undefined}>
+                    {!showReconciled && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedMutations.includes(m.id)}
+                          onChange={() => toggleMutation(m.id)}
+                        />
+                      </td>
+                    )}
+                    <td>{new Date(m.date).toLocaleDateString('id-ID')}</td>
+                    <td>
+                      {m.sender_name || '-'}
+                      {known && <span style={{ marginLeft: 4, fontSize: 11, color: '#1890ff' }}>(registered)</span>}
+                    </td>
+                    <td><strong>{formatRp(m.amount)}</strong></td>
+                    <td>{m.description || '-'}</td>
+                    <td className={m.is_reconciled ? 'paid' : 'unpaid'}>
+                      {m.is_reconciled ? 'Reconciled' : 'Unreconciled'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {mutations.length === 0 && (
+                <tr><td colSpan={showReconciled ? 5 : 6} style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No mutations</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {!showReconciled && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: 0, marginBottom: 8 }}>
+              <button
+                className={`btn btn-sm ${billTab === 'monthly' ? 'btn-primary' : ''}`}
+                style={{ borderRadius: '4px 0 0 4px' }}
+                onClick={() => setBillTab('monthly')}
+              >
+                Monthly Billings
+              </button>
+              <button
+                className={`btn btn-sm ${billTab === 'nonmonthly' ? 'btn-primary' : ''}`}
+                style={{ borderRadius: '0 4px 4px 0' }}
+                onClick={() => setBillTab('nonmonthly')}
+              >
+                Non-Monthly Incomes
+              </button>
+            </div>
+
+            {billTab === 'monthly' && (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={monthlyBillings.length > 0 && selectedBillings.length === monthlyBillings.length}
+                        onChange={() => {
+                          if (selectedBillings.length === monthlyBillings.length) {
+                            setSelectedBillings([]);
+                          } else {
+                            setSelectedBillings(monthlyBillings.map(b => b.id));
+                          }
+                        }}
+                      />
+                    </th>
+                    <th>Period</th>
+                    <th>Room</th>
+                    <th>Tenant</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlyBillings.map(b => (
+                    <tr key={b.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedBillings.includes(b.id)}
+                          onChange={() => toggleBilling(b.id)}
+                        />
+                      </td>
+                      <td>{MONTHS[(b.period_month || 1) - 1]} {b.period_year}</td>
+                      <td>{b.RentalContract?.Room?.room_number || '-'}</td>
+                      <td>{b.RentalContract?.Tenant?.nama_panggilan || b.RentalContract?.Tenant?.name || '-'}</td>
+                      <td><strong>{formatRp(b.total_amount)}</strong></td>
+                    </tr>
+                  ))}
+                  {monthlyBillings.length === 0 && (
+                    <tr><td colSpan="5" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No unpaid monthly billings</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+
+            {billTab === 'nonmonthly' && (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        checked={nonMonthlyIncomes.length > 0 && selectedIncomes.length === nonMonthlyIncomes.length}
+                        onChange={() => {
+                          if (selectedIncomes.length === nonMonthlyIncomes.length) {
+                            setSelectedIncomes([]);
+                          } else {
+                            setSelectedIncomes(nonMonthlyIncomes.map(i => i.id));
+                          }
+                        }}
+                      />
+                    </th>
+                    <th>Date</th>
+                    <th>Tenant</th>
+                    <th>Category</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nonMonthlyIncomes.map(inc => (
+                    <tr key={inc.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIncomes.includes(inc.id)}
+                          onChange={() => toggleIncome(inc.id)}
+                        />
+                      </td>
+                      <td>{inc.transaction_date ? new Date(inc.transaction_date).toLocaleDateString('id-ID') : '-'}</td>
+                      <td>{inc.Tenant?.nama_panggilan || inc.Tenant?.name || '-'}</td>
+                      <td>{inc.category}</td>
+                      <td><strong>{formatRp(inc.total_amount)}</strong></td>
+                    </tr>
+                  ))}
+                  {nonMonthlyIncomes.length === 0 && (
+                    <tr><td colSpan="5" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No unpaid non-monthly incomes</td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

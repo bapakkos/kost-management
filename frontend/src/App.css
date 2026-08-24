@@ -51,5 +51,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
 .data-table th { background: #fafafa; padding: 10px 8px; text-align: left; border-bottom: 2px solid #f0f0f0; }
+.data-table th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.data-table th.sortable-th:hover { background: #e8e8e8; }
 .data-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
 .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }

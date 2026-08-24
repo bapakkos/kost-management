@@ -3,6 +3,19 @@ import api from '../services/api';
 
 const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
+const CATEGORIES = [
+  { value: 'listrik', label: 'Listrik' },
+  { value: 'air', label: 'Air' },
+  { value: 'parkir', label: 'Parkir' },
+  { value: 'tv', label: 'TV' },
+  { value: 'internet', label: 'Internet' },
+  { value: 'denda', label: 'Denda' },
+  { value: 'sewa_harian', label: 'Sewa Harian' },
+  { value: 'deposit', label: 'Deposit' },
+  { value: 'deposit_hangus', label: 'Deposit Hangus' },
+  { value: 'lainnya', label: 'Lainnya' },
+];
+
 export default function NonMonthlyIncomes() {
   const [incomes, setIncomes] = useState([]);
   const [tenants, setTenants] = useState([]);
@@ -77,15 +90,19 @@ export default function NonMonthlyIncomes() {
     }
   };
 
+  const handleInvoicePDF = (id) => {
+    window.open(`${api.defaults.baseURL}/reports/invoice/non-monthly/${id}/pdf`, '_blank');
+  };
+
   if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div className="page-container">
-      <h2>💸 Non-Monthly Incomes</h2>
+      <h2>Tagihan Lepas</h2>
       {error && <div style={{ color: '#ff4d4f', marginBottom: 12 }}>{error}</div>}
 
       <form onSubmit={handleSubmit} className="card">
-        <h3>{editing ? 'Edit' : 'Add'} Income</h3>
+        <h3>{editing ? 'Edit' : 'Add'} Tagihan</h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Tenant</label>
@@ -104,12 +121,7 @@ export default function NonMonthlyIncomes() {
           <div className="form-group" style={{ flex: 1 }}>
             <label>Category</label>
             <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-              <option value="listrik">Listrik</option>
-              <option value="air">Air</option>
-              <option value="parkir">Parkir</option>
-              <option value="tv">TV</option>
-              <option value="internet">Internet</option>
-              <option value="lainnya">Lainnya</option>
+              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
         </div>
@@ -149,9 +161,8 @@ export default function NonMonthlyIncomes() {
             <th>Room</th>
             <th>Category</th>
             <th>Description</th>
-            <th>Unit Price</th>
-            <th>Qty</th>
             <th>Total</th>
+            <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -163,17 +174,17 @@ export default function NonMonthlyIncomes() {
               <td>{inc.Room?.room_number || '-'}</td>
               <td>{inc.category}</td>
               <td>{inc.description || '-'}</td>
-              <td>{formatRp(inc.unit_price)}</td>
-              <td>{inc.quantity}</td>
               <td><strong>{formatRp(inc.total_amount)}</strong></td>
+              <td><span style={{ color: inc.is_paid ? '#4CAF50' : '#ff4d4f', fontWeight: 600 }}>{inc.is_paid ? 'LUNAS' : 'UNPAID'}</span></td>
               <td>
                 <button className="btn btn-primary btn-sm" onClick={() => handleEdit(inc)}>Edit</button>
                 <button className="btn btn-danger btn-sm" style={{ marginLeft: 4 }} onClick={() => handleDelete(inc.id)}>Del</button>
+                <button className="btn btn-sm" style={{ marginLeft: 4, background: '#1890ff', color: '#fff' }} onClick={() => handleInvoicePDF(inc.id)}>PDF</button>
               </td>
             </tr>
           ))}
           {incomes.length === 0 && (
-            <tr><td colSpan="9" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No incomes yet</td></tr>
+            <tr><td colSpan="8" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No incomes yet</td></tr>
           )}
         </tbody>
       </table>

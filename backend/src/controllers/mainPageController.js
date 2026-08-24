@@ -174,10 +174,18 @@ exports.generateBillings = async (req, res) => {
       });
 
       const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
-      const addonParkir = 300000;
-      const addonTv = 200000;
-      const addonInternet = 50000;
-      const discount = 0;
+
+      // Copy addons from previous month's billing (if exists), otherwise default 0
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevYear = month === 1 ? year - 1 : year;
+      const prevBilling = await MonthlyBilling.findOne({
+        where: { rental_contract_id: contract.id, period_month: prevMonth, period_year: prevYear },
+      });
+
+      const addonParkir = prevBilling ? parseFloat(prevBilling.addon_parkir) : 0;
+      const addonTv = prevBilling ? parseFloat(prevBilling.addon_tv) : 0;
+      const addonInternet = prevBilling ? parseFloat(prevBilling.addon_internet) : 0;
+      const discount = prevBilling ? parseFloat(prevBilling.discount) : 0;
       const total = baseRent + addonParkir + addonTv + addonInternet - discount;
 
       const dueDate = calculateDueDate(contract.start_date);

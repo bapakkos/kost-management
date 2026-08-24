@@ -4,26 +4,14 @@ import api from '../services/api';
 const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
 export default function Payments() {
-  const [payments, setPayments] = useState([]);
-  const [tenants, setTenants] = useState([]);
-  const [rooms, setRooms] = useState([]);
+  const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    tenant_id: '', room_id: '', payment_date: new Date().toISOString().slice(0, 10),
-    deposit_amount: '', payment_method: 'transfer_bca', notes: '',
-  });
 
   const fetch = async () => {
     try {
-      const [pRes, tRes, rRes] = await Promise.all([
-        api.get('/payments'),
-        api.get('/tenants'),
-        api.get('/rooms'),
-      ]);
-      setPayments(pRes.data);
-      setTenants(tRes.data);
-      setRooms(rRes.data);
+      const { data } = await api.get('/payments');
+      setReceipts(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load');
     } finally {
@@ -33,21 +21,28 @@ export default function Payments() {
 
   useEffect(() => { fetch(); }, []);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    setError('');
+  const handleReceiptPDF = (id) => {
+    window.open(`${api.defaults.baseURL}/payments/receipt/${id}/pdf`, '_blank');
+  };
+
+  const handleDetail = async (id) => {
     try {
-      await api.post('/payments', {
-        ...form,
-        deposit_amount: form.deposit_amount ? parseFloat(form.deposit_amount) : null,
-      });
-      setForm({
-        tenant_id: '', room_id: '', payment_date: new Date().toISOString().slice(0, 10),
-        deposit_amount: '', payment_method: 'transfer_bca', notes: '',
-      });
-      fetch();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed');
+      const { data } = await api.get(`/payments/${id}`);
+      const items = data.PaymentReceiptItems?.map(i => {
+        if (i.item_type === 'monthly_billing' && i.MonthlyBilling) {
+          const b = i.MonthlyBilling;
+          return `Sewa ${String(b.period_month).padStart(2, '0')}/${b.period_year}: ${formatRp(i.amount)}`;
+        }
+        if (i.item_type === 'non_monthly_income' && i.NonMonthlyIncome) {
+          const inc = i.NonMonthlyIncome;
+          return `${inc.category}: ${formatRp(i.amount)}`;
+        }
+        return `Item: ${formatRp(i.amount)}`;
+      }).join('\n');
+      const info = `Nota: ${data.receipt_no}\nTanggal: ${new Date(data.payment_date).toLocaleDateString('id-ID')}\nTenant: ${data.Tenant?.nama_panggilan || data.Tenant?.name || '-'}\nKamar: ${data.Room?.room_number || '-'}\n\n${items}\n\nTotal: ${formatRp(data.total_amount)}\nDiskon: ${formatRp(data.discount_amount)}\nSelisih: ${formatRp(data.selisih_amount)}`;
+      alert(info);
+    } catch {
+      alert('Failed to load detail');
     }
   };
 
@@ -55,85 +50,38 @@ export default function Payments() {
 
   return (
     <div className="page-container">
-      <h2>💵 Payments</h2>
+      <h2>Nota Pembayaran</h2>
       {error && <div style={{ color: '#ff4d4f', marginBottom: 12 }}>{error}</div>}
-
-      <form onSubmit={handleCreate} className="card">
-        <h3>Record Payment</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Tenant</label>
-            <select value={form.tenant_id} onChange={e => setForm({ ...form, tenant_id: e.target.value })} required>
-              <option value="">-- Select --</option>
-              {tenants.map(t => (
-                <option key={t.id} value={t.id}>{t.nama_panggilan || t.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Room</label>
-            <select value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })} required>
-              <option value="">-- Select --</option>
-              {rooms.map(r => (
-                <option key={r.id} value={r.id}>{r.room_number}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Date</label>
-            <input type="date" value={form.payment_date} onChange={e => setForm({ ...form, payment_date: e.target.value })} required />
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Deposit Amount</label>
-            <input type="number" value={form.deposit_amount} onChange={e => setForm({ ...form, deposit_amount: e.target.value })} placeholder="0" />
-          </div>
-          <div className="form-group" style={{ flex: 1 }}>
-            <label>Method</label>
-            <select value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>
-              <option value="transfer_bca">Transfer BCA</option>
-              <option value="transfer_bni">Transfer BNI</option>
-              <option value="transfer_bri">Transfer BRI</option>
-              <option value="transfer_mandiri">Transfer Mandiri</option>
-              <option value="gopay">GoPay</option>
-              <option value="ovo">OVO</option>
-              <option value="dana">DANA</option>
-              <option value="cash">Cash</option>
-            </select>
-          </div>
-        </div>
-        <div className="form-group">
-          <label>Notes</label>
-          <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
-        </div>
-        <button className="btn btn-primary" type="submit">Record Payment</button>
-      </form>
 
       <table className="data-table">
         <thead>
           <tr>
-            <th>Date</th>
+            <th>No. Nota</th>
+            <th>Tanggal</th>
             <th>Tenant</th>
-            <th>Room</th>
+            <th>Kamar</th>
             <th>Total</th>
-            <th>Method</th>
-            <th>Notes</th>
+            <th>Diskon</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {payments.map(p => (
-            <tr key={p.id}>
-              <td>{new Date(p.payment_date).toLocaleDateString('id-ID')}</td>
-              <td>{p.Tenant?.nama_panggilan || p.Tenant?.name || '-'}</td>
-              <td>{p.Room?.room_number || '-'}</td>
-              <td><strong>{formatRp(p.total_amount)}</strong></td>
-              <td>{p.payment_method}</td>
-              <td>{p.notes || '-'}</td>
+          {receipts.map(r => (
+            <tr key={r.id}>
+              <td><strong>{r.receipt_no}</strong></td>
+              <td>{new Date(r.payment_date).toLocaleDateString('id-ID')}</td>
+              <td>{r.Tenant?.nama_panggilan || r.Tenant?.name || '-'}</td>
+              <td>{r.Room?.room_number || '-'}</td>
+              <td><strong>{formatRp(r.total_amount)}</strong></td>
+              <td>{Number(r.discount_amount) > 0 ? formatRp(r.discount_amount) : '-'}</td>
+              <td>
+                <button className="btn btn-primary btn-sm" onClick={() => handleDetail(r.id)}>Detail</button>
+                <button className="btn btn-sm" style={{ marginLeft: 4, background: '#4CAF50', color: '#fff' }} onClick={() => handleReceiptPDF(r.id)}>Nota PDF</button>
+              </td>
             </tr>
           ))}
-          {payments.length === 0 && (
-            <tr><td colSpan="6" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No payments yet</td></tr>
+          {receipts.length === 0 && (
+            <tr><td colSpan="7" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No receipts yet. Reconcile from Bank page.</td></tr>
           )}
         </tbody>
       </table>

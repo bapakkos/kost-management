@@ -33,17 +33,20 @@ export default function Layout({ children }) {
           📝 Contracts
         </NavLink>
         <NavLink to="/payments" className={({ isActive }) => isActive ? 'active' : ''}>
-          💵 Payments
+          🧾 Nota
         </NavLink>
         <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '8px 0' }} />
         <NavLink to="/monthly-billings" className={({ isActive }) => isActive ? 'active' : ''}>
-          📊 Billings
+          📊 Billing
         </NavLink>
         <NavLink to="/non-monthly-incomes" className={({ isActive }) => isActive ? 'active' : ''}>
-          💸 Incomes
+          📋 Tagihan Lepas
         </NavLink>
         <NavLink to="/bank-reconciliation" className={({ isActive }) => isActive ? 'active' : ''}>
-          🏦 Bank
+          🏦 Rekonsiliasi
+        </NavLink>
+        <NavLink to="/reports" className={({ isActive }) => isActive ? 'active' : ''}>
+          📈 Laporan
         </NavLink>
         <hr style={{ border: 'none', borderTop: '1px solid rgba(255,255,255,0.1)', margin: '8px 0' }} />
         <NavLink to="/settings" className={({ isActive }) => isActive ? 'active' : ''}>

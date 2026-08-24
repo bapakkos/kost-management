@@ -9,9 +9,11 @@ const RentalContract = require('./RentalContract');
 const MonthlyBilling = require('./MonthlyBilling');
 const NonMonthlyIncome = require('./NonMonthlyIncome');
 const PaymentReceipt = require('./PaymentReceipt');
-const PaymentReceiptBilling = require('./PaymentReceiptBilling');
-const PaymentReceiptIncome = require('./PaymentReceiptIncome');
+const PaymentReceiptItem = require('./PaymentReceiptItem');
 const BankMutation = require('./BankMutation');
+const ReconciliationLink = require('./ReconciliationLink');
+const DepositReturn = require('./DepositReturn');
+const SenderRegistry = require('./SenderRegistry');
 
 // --- Room Type ↔ Pricing Scheme Rates ---
 RoomType.hasMany(PricingSchemeRate, { foreignKey: 'room_type_id' });
@@ -51,42 +53,47 @@ NonMonthlyIncome.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 Room.hasMany(NonMonthlyIncome, { foreignKey: 'room_id' });
 NonMonthlyIncome.belongsTo(Room, { foreignKey: 'room_id' });
 
-// --- Payment Receipts ---
+RentalContract.hasMany(NonMonthlyIncome, { foreignKey: 'rental_contract_id' });
+NonMonthlyIncome.belongsTo(RentalContract, { foreignKey: 'rental_contract_id' });
+
+// --- Payment Receipts (Nota) ---
 Tenant.hasMany(PaymentReceipt, { foreignKey: 'tenant_id' });
 PaymentReceipt.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 
 Room.hasMany(PaymentReceipt, { foreignKey: 'room_id' });
 PaymentReceipt.belongsTo(Room, { foreignKey: 'room_id' });
 
-RentalContract.hasMany(PaymentReceipt, { foreignKey: 'rental_contract_id' });
-PaymentReceipt.belongsTo(RentalContract, { foreignKey: 'rental_contract_id' });
-
-TenantBankAccount.hasMany(PaymentReceipt, { foreignKey: 'bank_account_id' });
-PaymentReceipt.belongsTo(TenantBankAccount, { foreignKey: 'bank_account_id' });
-
 User.hasMany(PaymentReceipt, { foreignKey: 'created_by' });
 PaymentReceipt.belongsTo(User, { foreignKey: 'created_by' });
 
-// --- Payment Receipt ↔ Billings (Junction) ---
-PaymentReceipt.hasMany(PaymentReceiptBilling, { foreignKey: 'payment_receipt_id' });
-PaymentReceiptBilling.belongsTo(PaymentReceipt, { foreignKey: 'payment_receipt_id' });
+// --- Payment Receipt Items ---
+PaymentReceipt.hasMany(PaymentReceiptItem, { foreignKey: 'payment_receipt_id' });
+PaymentReceiptItem.belongsTo(PaymentReceipt, { foreignKey: 'payment_receipt_id' });
 
-MonthlyBilling.hasMany(PaymentReceiptBilling, { foreignKey: 'monthly_billing_id' });
-PaymentReceiptBilling.belongsTo(MonthlyBilling, { foreignKey: 'monthly_billing_id' });
+MonthlyBilling.hasMany(PaymentReceiptItem, { foreignKey: 'monthly_billing_id' });
+PaymentReceiptItem.belongsTo(MonthlyBilling, { foreignKey: 'monthly_billing_id' });
 
-// --- Payment Receipt ↔ Incomes (Junction) ---
-PaymentReceipt.hasMany(PaymentReceiptIncome, { foreignKey: 'payment_receipt_id' });
-PaymentReceiptIncome.belongsTo(PaymentReceipt, { foreignKey: 'payment_receipt_id' });
-
-NonMonthlyIncome.hasMany(PaymentReceiptIncome, { foreignKey: 'non_monthly_income_id' });
-PaymentReceiptIncome.belongsTo(NonMonthlyIncome, { foreignKey: 'non_monthly_income_id' });
+NonMonthlyIncome.hasMany(PaymentReceiptItem, { foreignKey: 'non_monthly_income_id' });
+PaymentReceiptItem.belongsTo(NonMonthlyIncome, { foreignKey: 'non_monthly_income_id' });
 
 // --- Bank Mutations ---
 Tenant.hasMany(BankMutation, { foreignKey: 'tenant_id' });
 BankMutation.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 
-PaymentReceipt.hasMany(BankMutation, { foreignKey: 'payment_receipt_id' });
-BankMutation.belongsTo(PaymentReceipt, { foreignKey: 'payment_receipt_id' });
+// --- Reconciliation Links (N:M) ---
+BankMutation.hasMany(ReconciliationLink, { foreignKey: 'bank_mutation_id' });
+ReconciliationLink.belongsTo(BankMutation, { foreignKey: 'bank_mutation_id' });
+
+// --- Deposit Returns ---
+RentalContract.hasMany(DepositReturn, { foreignKey: 'rental_contract_id' });
+DepositReturn.belongsTo(RentalContract, { foreignKey: 'rental_contract_id' });
+
+User.hasMany(DepositReturn, { foreignKey: 'created_by' });
+DepositReturn.belongsTo(User, { foreignKey: 'created_by' });
+
+// --- Sender Registry ---
+Tenant.hasMany(SenderRegistry, { foreignKey: 'tenant_id' });
+SenderRegistry.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 
 module.exports = {
   User,
@@ -100,7 +107,9 @@ module.exports = {
   MonthlyBilling,
   NonMonthlyIncome,
   PaymentReceipt,
-  PaymentReceiptBilling,
-  PaymentReceiptIncome,
+  PaymentReceiptItem,
   BankMutation,
+  ReconciliationLink,
+  DepositReturn,
+  SenderRegistry,
 };

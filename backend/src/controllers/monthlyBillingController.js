@@ -51,10 +51,10 @@ exports.create = async (req, res) => {
     });
 
     const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
-    const addonParkir = req.body.addon_parkir || 300000;
-    const addonTv = req.body.addon_tv || 200000;
-    const addonInternet = req.body.addon_internet || 50000;
-    const discount = req.body.discount || 0;
+    const addonParkir = req.body.addon_parkir != null ? req.body.addon_parkir : 0;
+    const addonTv = req.body.addon_tv != null ? req.body.addon_tv : 0;
+    const addonInternet = req.body.addon_internet != null ? req.body.addon_internet : 0;
+    const discount = req.body.discount != null ? req.body.discount : 0;
     const total = baseRent + addonParkir + addonTv + addonInternet - discount;
 
     const dueDate = calculateDueDate(contract.start_date);
@@ -87,7 +87,8 @@ exports.update = async (req, res) => {
 
     // Recalculate total if amounts changed
     const updated = { ...req.body };
-    if (req.body.base_rent || req.body.addon_parkir || req.body.addon_tv || req.body.addon_internet || req.body.discount) {
+    const amountFields = ['base_rent', 'addon_parkir', 'addon_tv', 'addon_internet', 'discount'];
+    if (amountFields.some(f => req.body[f] != null)) {
       updated.total_amount = calculateBillingTotal({ ...billing.dataValues, ...req.body });
     }
 
@@ -170,7 +171,19 @@ exports.generate = async (req, res) => {
       });
 
       const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
-      const total = baseRent + 300000 + 200000 + 50000;
+
+      // Copy addons from previous month's billing (if exists), otherwise default 0
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevYear = month === 1 ? year - 1 : year;
+      const prevBilling = await MonthlyBilling.findOne({
+        where: { rental_contract_id: contract.id, period_month: prevMonth, period_year: prevYear },
+      });
+
+      const addonParkir = prevBilling ? parseFloat(prevBilling.addon_parkir) : 0;
+      const addonTv = prevBilling ? parseFloat(prevBilling.addon_tv) : 0;
+      const addonInternet = prevBilling ? parseFloat(prevBilling.addon_internet) : 0;
+      const discount = prevBilling ? parseFloat(prevBilling.discount) : 0;
+      const total = baseRent + addonParkir + addonTv + addonInternet - discount;
       const dueDate = calculateDueDate(contract.start_date);
       const dueDateStr = new Date(year, month - 1, dueDate.getDate()).toISOString().slice(0, 10);
 
@@ -179,10 +192,10 @@ exports.generate = async (req, res) => {
         period_month: month,
         period_year: year,
         base_rent: baseRent,
-        addon_parkir: 300000,
-        addon_tv: 200000,
-        addon_internet: 50000,
-        discount: 0,
+        addon_parkir: addonParkir,
+        addon_tv: addonTv,
+        addon_internet: addonInternet,
+        discount,
         due_date: dueDateStr,
         total_amount: total,
         is_paid: false,
@@ -191,6 +204,77 @@ exports.generate = async (req, res) => {
     }
 
     res.json({ created: created.length, month, year });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.generateBulk = async (req, res) => {
+  try {
+    const { contract_id, start_month, start_year, months } = req.body;
+    if (!contract_id || !start_month || !start_year || !months) {
+      return res.status(400).json({ error: 'contract_id, start_month, start_year, months are required' });
+    }
+
+    const contract = await RentalContract.findByPk(contract_id, {
+      include: [PricingScheme, { model: Room, include: [RoomType] }],
+    });
+    if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const rate = await PricingSchemeRate.findOne({
+      where: { pricing_scheme_id: contract.pricing_scheme_id, room_type_id: contract.Room.room_type_id },
+    });
+    const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
+
+    const prevMonth = parseInt(start_month) === 1 ? 12 : parseInt(start_month) - 1;
+    const prevYear = parseInt(start_month) === 1 ? parseInt(start_year) - 1 : parseInt(start_year);
+    const prevBilling = await MonthlyBilling.findOne({
+      where: { rental_contract_id: contract.id, period_month: prevMonth, period_year: prevYear },
+    });
+    const addonParkir = prevBilling ? parseFloat(prevBilling.addon_parkir) : 0;
+    const addonTv = prevBilling ? parseFloat(prevBilling.addon_tv) : 0;
+    const addonInternet = prevBilling ? parseFloat(prevBilling.addon_internet) : 0;
+
+    const created = [];
+    const skipped = [];
+    let cm = parseInt(start_month);
+    let cy = parseInt(start_year);
+
+    for (let i = 0; i < parseInt(months); i++) {
+      const existing = await MonthlyBilling.findOne({
+        where: { rental_contract_id: contract.id, period_month: cm, period_year: cy },
+      });
+      if (existing) {
+        skipped.push({ period: `${cm}/${cy}` });
+        cm = cm === 12 ? 1 : cm + 1;
+        if (cm === 1) cy++;
+        continue;
+      }
+
+      const total = baseRent + addonParkir + addonTv + addonInternet;
+      const dueDate = calculateDueDate(contract.start_date);
+      const dueDateStr = new Date(cy, cm - 1, dueDate.getDate()).toISOString().slice(0, 10);
+
+      const billing = await MonthlyBilling.create({
+        rental_contract_id: contract.id,
+        period_month: cm,
+        period_year: cy,
+        base_rent: baseRent,
+        addon_parkir: addonParkir,
+        addon_tv: addonTv,
+        addon_internet: addonInternet,
+        discount: 0,
+        due_date: dueDateStr,
+        total_amount: total,
+        is_paid: false,
+      });
+      created.push(billing);
+
+      cm = cm === 12 ? 1 : cm + 1;
+      if (cm === 1) cy++;
+    }
+
+    res.json({ created: created.length, skipped: skipped.length, months: parseInt(months) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

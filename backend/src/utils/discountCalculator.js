@@ -1,6 +1,9 @@
 function calculateDiscount(monthsPaid) {
-  if (monthsPaid >= 12) {
-    return 100000 * monthsPaid;
+  if (monthsPaid === 12) {
+    return 1000000;
+  }
+  if (monthsPaid === 6) {
+    return 500000;
   }
   return 0;
 }

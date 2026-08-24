@@ -88,17 +88,50 @@ exports.update = async (req, res) => {
   try {
     const contract = await RentalContract.findByPk(req.params.id);
     if (!contract) return res.status(404).json({ error: 'Contract not found' });
+
+    const oldRoomId = contract.room_id;
+    const { room_id, end_date, status } = req.body;
+
     await contract.update(req.body);
 
-    // Update room status when end_date is set
-    if (req.body.end_date) {
-      const room = await Room.findByPk(contract.room_id);
-      await room.update({ status: 'available' });
+    // If end_date is set, mark as keluar
+    if (end_date) {
       contract.status = 'keluar';
       await contract.save();
     }
 
-    res.json(contract);
+    // Determine target room
+    const targetRoomId = room_id || oldRoomId;
+    const room = await Room.findByPk(targetRoomId);
+    if (room) {
+      if (contract.status === 'keluar') {
+        await room.update({ status: 'available' });
+      } else if (contract.status === 'booking') {
+        await room.update({ status: 'booking' });
+      } else {
+        await room.update({ status: 'occupied' });
+      }
+    }
+
+    // If room changed, free the old room (if not already handled above)
+    if (room_id && room_id !== oldRoomId) {
+      const oldRoom = await Room.findByPk(oldRoomId);
+      if (oldRoom) {
+        const hasActiveContract = await RentalContract.findOne({
+          where: { room_id: oldRoomId, status: { [Op.in]: ['booking', 'sewa'] } },
+        });
+        await oldRoom.update({ status: hasActiveContract ? 'occupied' : 'available' });
+      }
+    }
+
+    const full = await RentalContract.findByPk(contract.id, {
+      include: [
+        { model: Room, include: [RoomType] },
+        { model: Tenant },
+        { model: PricingScheme },
+      ],
+    });
+    res.json(full);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
