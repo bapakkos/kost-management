@@ -144,7 +144,7 @@ exports.getSummary = async (req, res) => {
 
 exports.generate = async (req, res) => {
   try {
-    const { month, year } = req.body;
+    const { month, year, force } = req.body;
     const firstDay = new Date(year, month - 1, 1);
     const lastDay = new Date(year, month, 0);
     const firstDayStr = firstDay.toISOString().slice(0, 10);
@@ -160,17 +160,30 @@ exports.generate = async (req, res) => {
     });
 
     const created = [];
+    const updated = [];
     for (const contract of contracts) {
       const existing = await MonthlyBilling.findOne({
         where: { rental_contract_id: contract.id, period_month: month, period_year: year },
       });
-      if (existing) continue;
 
       const rate = await PricingSchemeRate.findOne({
         where: { pricing_scheme_id: contract.pricing_scheme_id, room_type_id: contract.Room.room_type_id },
       });
 
       const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
+
+      if (existing) {
+        if (!force) continue;
+        // Recalculate from current price scheme, preserving addons/discount/paid status/notes
+        const addonParkir = parseFloat(existing.addon_parkir) || 0;
+        const addonTv = parseFloat(existing.addon_tv) || 0;
+        const addonInternet = parseFloat(existing.addon_internet) || 0;
+        const discount = parseFloat(existing.discount) || 0;
+        const total = baseRent + addonParkir + addonTv + addonInternet - discount;
+        await existing.update({ base_rent: baseRent, total_amount: total });
+        updated.push(existing);
+        continue;
+      }
 
       // Copy addons from previous month's billing (if exists), otherwise default 0
       const prevMonth = month === 1 ? 12 : month - 1;
@@ -203,7 +216,7 @@ exports.generate = async (req, res) => {
       created.push(billing);
     }
 
-    res.json({ created: created.length, month, year });
+    res.json({ created: created.length, updated: updated.length, month, year });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

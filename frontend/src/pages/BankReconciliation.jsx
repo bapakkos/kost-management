@@ -3,6 +3,19 @@ import api from '../services/api';
 
 const formatRp = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
+const tenantRoom = (t) => {
+  const rc = t.RentalContracts && t.RentalContracts[0];
+  return rc && rc.Room ? rc.Room.room_number : null;
+};
+
+const tenantLabel = (t) => {
+  const room = tenantRoom(t);
+  let label = t.nama_panggilan;
+  if (room) label += ` (${room})`;
+  if (t.name && t.name !== t.nama_panggilan) label += ` — ${t.name}`;
+  return label;
+};
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function BankReconciliation() {
@@ -35,6 +48,9 @@ export default function BankReconciliation() {
   const [mappingResult, setMappingResult] = useState(null);
   const fileInputRef = useRef(null);
   const mappingFileRef = useRef(null);
+  const [newSenderName, setNewSenderName] = useState('');
+  const [newSenderTenant, setNewSenderTenant] = useState('');
+  const [addingSender, setAddingSender] = useState(false);
 
   const mutationTotal = selectedMutations.reduce((sum, id) => {
     const m = mutations.find(m => m.id === id);
@@ -223,19 +239,20 @@ export default function BankReconciliation() {
 
     setReconciling(true);
     setError('');
+    setMsg('');
     try {
       const payload = {
         mutation_ids: selectedMutations,
-        monthly_billing_ids: selectedBillings,
-        non_monthly_income_ids: selectedIncomes,
+        billing_ids: selectedBillings,
+        income_ids: selectedIncomes,
         force: forceReconcile,
         notes: forceReconcile ? forceNotes : undefined,
       };
       if (promo) {
-        payload.suggested_discount = promo.discount;
+        payload.apply_promo = true;
       }
       await api.post('/reconcile', payload);
-      setMsg('Reconciliation successful');
+      setMsg(`Rekonsiliasi berhasil: ${selectedBillings.length + selectedIncomes.length} tagihan lunas, ${selectedMutations.length} mutasi ter-link`);
       setSelectedMutations([]);
       setSelectedBillings([]);
       setSelectedIncomes([]);
@@ -306,6 +323,29 @@ export default function BankReconciliation() {
     } finally {
       setImportingMapping(false);
       e.target.value = '';
+    }
+  };
+
+  const handleAddSender = async () => {
+    const name = newSenderName.trim();
+    if (!name) return;
+    setAddingSender(true);
+    setError('');
+    setMsg('');
+    try {
+      const { data } = await api.post('/sender-registry', {
+        sender_name: name,
+        tenant_id: newSenderTenant ? Number(newSenderTenant) : null,
+      });
+      setMsg(`Nama pengirim "${data.sender_name}" ditambahkan${data.tenant_id ? ' dan ter-link ke tenant.' : ' (belum ter-link).'}`);
+      setNewSenderName('');
+      setNewSenderTenant('');
+      setShowSenders(true);
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Gagal menambah nama pengirim');
+    } finally {
+      setAddingSender(false);
     }
   };
 
@@ -381,6 +421,33 @@ export default function BankReconciliation() {
             </div>
           );
         })()}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12, padding: 10, background: '#fafafa', borderRadius: 6 }}>
+          <strong style={{ fontSize: 13 }}>Tambah Nama Pengirim:</strong>
+          <input
+            type="text"
+            value={newSenderName}
+            onChange={e => setNewSenderName(e.target.value)}
+            placeholder="Nama pengirim (mis. PINKAN NUANSA PUTR)"
+            style={{ flex: '1 1 220px', padding: '6px 8px' }}
+          />
+          <select
+            value={newSenderTenant}
+            onChange={e => setNewSenderTenant(e.target.value)}
+            style={{ flex: '1 1 200px', padding: '6px 8px' }}
+          >
+            <option value="">— tanpa tenant —</option>
+            {tenants.map(t => (
+              <option key={t.id} value={t.id}>{tenantLabel(t)}</option>
+            ))}
+          </select>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleAddSender}
+            disabled={addingSender || !newSenderName.trim()}
+          >
+            {addingSender ? 'Menambah...' : 'Tambah'}
+          </button>
+        </div>
         <button
           className="btn btn-primary"
           onClick={handleAutoLink}
@@ -494,7 +561,7 @@ export default function BankReconciliation() {
                         <option value="">{current ? '— hapus link —' : '— belum ter-link —'}</option>
                         {tenants.map(t => (
                           <option key={t.id} value={t.id}>
-                            {t.nama_panggilan}{t.name && t.name !== t.nama_panggilan ? ` (${t.name})` : ''}
+                            {tenantLabel(t)}
                           </option>
                         ))}
                       </select>

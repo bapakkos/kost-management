@@ -2,7 +2,12 @@ const { Tenant, TenantBankAccount, RentalContract, Room, RoomType } = require('.
 
 exports.getAll = async (req, res) => {
   try {
-    const tenants = await Tenant.findAll({ include: [TenantBankAccount] });
+    const tenants = await Tenant.findAll({
+      include: [
+        TenantBankAccount,
+        { model: RentalContract, required: false, where: { status: 'sewa' }, include: [Room] },
+      ],
+    });
     res.json(tenants);
   } catch (err) {
     res.status(500).json({ error: err.message });

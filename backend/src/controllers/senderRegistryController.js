@@ -198,6 +198,33 @@ exports.importMapping = async (req, res) => {
   }
 };
 
+exports.create = async (req, res) => {
+  try {
+    const senderName = normalize(req.body?.sender_name);
+    if (!senderName) return res.status(400).json({ error: 'sender_name is required' });
+
+    const tenantId = req.body?.tenant_id ? Number(req.body.tenant_id) : null;
+    if (tenantId) {
+      const tenant = await Tenant.findByPk(tenantId);
+      if (!tenant) return res.status(400).json({ error: 'tenant_id not found' });
+    }
+
+    const [record, created] = await SenderRegistry.findOrCreate({
+      where: { sender_name: senderName },
+      defaults: { sender_name: senderName, tenant_id: tenantId, label: req.body?.label || null },
+    });
+
+    if (!created && (tenantId || req.body?.label !== undefined)) {
+      await record.update({ tenant_id: tenantId, label: req.body?.label !== undefined ? req.body.label : record.label });
+    }
+
+    const result = await SenderRegistry.findByPk(record.id, { include: [Tenant] });
+    res.status(created ? 201 : 200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 exports.update = async (req, res) => {
   try {
     const record = await SenderRegistry.findByPk(req.params.id);

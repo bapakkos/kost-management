@@ -2,6 +2,7 @@ const router = require('express').Router();
 const ctrl = require('../controllers/senderRegistryController');
 const { auth } = require('../middleware/auth');
 
+router.post('/', auth, ctrl.create);
 router.get('/', auth, ctrl.getAll);
 router.post('/suggest', auth, ctrl.suggest);
 router.post('/auto-link', auth, ctrl.autoLink);

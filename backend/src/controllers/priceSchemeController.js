@@ -62,11 +62,18 @@ exports.getRates = async (req, res) => {
 exports.addRate = async (req, res) => {
   try {
     const { room_type_id, monthly_price } = req.body;
-    const [rate] = await PricingSchemeRate.upsert({
-      pricing_scheme_id: req.params.id,
-      room_type_id,
-      monthly_price,
+    let rate = await PricingSchemeRate.findOne({
+      where: { pricing_scheme_id: req.params.id, room_type_id },
     });
+    if (rate) {
+      await rate.update({ monthly_price });
+    } else {
+      rate = await PricingSchemeRate.create({
+        pricing_scheme_id: req.params.id,
+        room_type_id,
+        monthly_price,
+      });
+    }
     res.status(201).json(rate);
   } catch (err) {
     res.status(500).json({ error: err.message });

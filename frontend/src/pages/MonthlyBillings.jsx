@@ -17,6 +17,9 @@ export default function MonthlyBillings() {
   const [bulkForm, setBulkForm] = useState({ contract_id: '', start_month: '', start_year: '', months: '' });
   const [contracts, setContracts] = useState([]);
   const [bulkMsg, setBulkMsg] = useState('');
+  const [genPeriod, setGenPeriod] = useState({ month: '', year: '' });
+  const [genForce, setGenForce] = useState(false);
+  const [genMsg, setGenMsg] = useState('');
 
   const fetch = async () => {
     setLoading(true);
@@ -60,6 +63,25 @@ export default function MonthlyBillings() {
       fetch();
     } catch (err) {
       setBulkMsg(err.response?.data?.error || 'Failed');
+    }
+  };
+
+  const handleGeneratePeriod = async () => {
+    setGenMsg('');
+    if (!genPeriod.month || !genPeriod.year) {
+      setGenMsg('Pilih bulan & tahun terlebih dahulu');
+      return;
+    }
+    try {
+      const { data } = await api.post('/monthly-billings/generate', {
+        month: parseInt(genPeriod.month),
+        year: parseInt(genPeriod.year),
+        force: genForce,
+      });
+      setGenMsg(`Buat baru: ${data.created}, Hitung ulang: ${data.updated} (${MONTHS[data.month - 1]} ${data.year})`);
+      fetch();
+    } catch (err) {
+      setGenMsg(err.response?.data?.error || 'Failed');
     }
   };
 
@@ -150,7 +172,34 @@ export default function MonthlyBillings() {
       </div>
 
       <div className="card">
-        <h3>Generate Billings</h3>
+        <h3>Generate Billing per Periode</h3>
+        <p style={{ color: '#888', fontSize: 13, marginTop: 0 }}>
+          Buat billing untuk <strong>semua penyewa aktif</strong> pada periode tertentu (cocok untuk penagihan akhir bulan).
+          Centang "Timpa &amp; hitung ulang" untuk memperbaiki billing yang sudah ada dengan harga terbaru (addon, discount, &amp; status paid tetap dipertahankan).
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Month</label>
+            <select value={genPeriod.month} onChange={e => setGenPeriod({ ...genPeriod, month: e.target.value })}>
+              <option value="">--</option>
+              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Year</label>
+            <input type="number" value={genPeriod.year} onChange={e => setGenPeriod({ ...genPeriod, year: e.target.value })} placeholder="2026" style={{ width: 80 }} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 8 }}>
+            <input type="checkbox" checked={genForce} onChange={e => setGenForce(e.target.checked)} />
+            Timpa &amp; hitung ulang yang sudah ada
+          </label>
+          <button className="btn btn-primary" onClick={handleGeneratePeriod}>Generate</button>
+        </div>
+        {genMsg && <div style={{ marginTop: 8, color: genMsg.includes('Failed') || genMsg.includes('Pilih') ? '#ff4d4f' : '#4CAF50' }}>{genMsg}</div>}
+      </div>
+
+      <div className="card">
+        <h3>Generate per Kontrak</h3>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div className="form-group" style={{ flex: 1, minWidth: 150 }}>
             <label>Contract</label>
