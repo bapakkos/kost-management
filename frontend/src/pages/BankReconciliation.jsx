@@ -273,6 +273,19 @@ export default function BankReconciliation() {
     );
   };
 
+  const handleUndo = async (id) => {
+    if (!window.confirm('Batalkan rekonsiliasi untuk mutasi ini? Tagihan akan dikembalikan ke status belum lunas.')) return;
+    setError('');
+    setMsg('');
+    try {
+      const { data } = await api.post('/reconcile/undo', { mutation_ids: [id] });
+      setMsg(`Rekonsiliasi dibatalkan: ${data.undone || 0} mutasi, ${data.receipts_deleted || 0} nota dihapus.`);
+      fetch();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Undo reconciliation failed');
+    }
+  };
+
   const handleAutoLink = async () => {
     setLinking(true);
     setError('');
@@ -735,6 +748,9 @@ export default function BankReconciliation() {
                 <th>Amount</th>
                 <th>Description</th>
                 <th>Status</th>
+                {showReconciled && <th>Nota</th>}
+                {showReconciled && <th>Penghuni</th>}
+                {showReconciled && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -761,11 +777,42 @@ export default function BankReconciliation() {
                     <td className={m.is_reconciled ? 'paid' : 'unpaid'}>
                       {m.is_reconciled ? 'Reconciled' : 'Unreconciled'}
                     </td>
+                    {showReconciled && (
+                      <td>
+                        {m.reconciliation?.receipt_no
+                          ? m.reconciliation.receipt_no
+                          : m.reconciliation?.type === 'deposit_return'
+                            ? '(deposit return)'
+                            : '-'}
+                      </td>
+                    )}
+                    {showReconciled && (
+                      <td>
+                        {m.reconciliation?.tenant
+                          ? (() => {
+                              const t = m.reconciliation.tenant;
+                              return t.name && t.name !== t.nama_panggilan
+                                ? `${t.nama_panggilan} — ${t.name}`
+                                : t.nama_panggilan;
+                            })()
+                          : '-'}
+                      </td>
+                    )}
+                    {showReconciled && (
+                      <td>
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleUndo(m.id)}
+                        >
+                          Undo
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {mutations.length === 0 && (
-                <tr><td colSpan={showReconciled ? 5 : 6} style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No mutations</td></tr>
+                <tr><td colSpan={showReconciled ? 8 : 6} style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No mutations</td></tr>
               )}
             </tbody>
           </table>

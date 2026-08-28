@@ -14,6 +14,7 @@ export default function Reports() {
   const [year, setYear] = useState(now.getFullYear());
   const [monthly, setMonthly] = useState(null);
   const [yearly, setYearly] = useState([]);
+  const [deposits, setDeposits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -35,10 +36,19 @@ export default function Reports() {
     }
   };
 
+  const fetchDeposits = async () => {
+    try {
+      const res = await api.get('/reports/deposits');
+      setDeposits(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load deposit report');
+    }
+  };
+
   const fetchAll = async () => {
     setLoading(true);
     setError('');
-    await Promise.all([fetchMonthly(), fetchYearly()]);
+    await Promise.all([fetchMonthly(), fetchYearly(), fetchDeposits()]);
     setLoading(false);
   };
 
@@ -125,6 +135,54 @@ export default function Reports() {
               );
             })}
           </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16, background: '#f6ffed', border: '1px solid #b7eb8f' }}>
+        <h3 style={{ marginBottom: 16 }}>🏦 Liabilitas Deposit</h3>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Terkumpul</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#1890ff' }}>{formatRp(deposits?.total_collected || 0)}</div>
+          </div>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Hangus</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fa8c16' }}>{formatRp(deposits?.total_forfeited || 0)}</div>
+          </div>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Dikembalikan</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#722ed1' }}>{formatRp(deposits?.total_returned || 0)}</div>
+          </div>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Liabilitas Aktif</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#52c41a' }}>{formatRp(deposits?.active_liability || 0)}</div>
+          </div>
+        </div>
+        {deposits && deposits.breakdown.length > 0 && (
+          <table className="table" style={{ fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th>Penghuni</th>
+                <th>Kamar</th>
+                <th>Terkumpul</th>
+                <th>Hangus</th>
+                <th>Dikembalikan</th>
+                <th>Aktif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deposits.breakdown.map((b) => (
+                <tr key={b.tenant_id}>
+                  <td>{b.tenant_name}</td>
+                  <td>{b.room || '-'}</td>
+                  <td>{formatRp(b.collected)}</td>
+                  <td>{formatRp(b.forfeited)}</td>
+                  <td>{formatRp(b.returned)}</td>
+                  <td style={{ fontWeight: 700 }}>{formatRp(b.active)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 

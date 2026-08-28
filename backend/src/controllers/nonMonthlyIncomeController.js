@@ -27,7 +27,9 @@ exports.create = async (req, res) => {
   try {
     const { unit_price, quantity } = req.body;
     const total_amount = (parseFloat(unit_price) || 0) * (parseInt(quantity) || 0);
-    const income = await NonMonthlyIncome.create({ ...req.body, total_amount });
+    const body = { ...req.body, total_amount };
+    if (body.category === 'deposit') body.is_revenue = false;
+    const income = await NonMonthlyIncome.create(body);
     res.status(201).json(income);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -42,6 +44,7 @@ exports.update = async (req, res) => {
     if (req.body.unit_price && req.body.quantity) {
       updated.total_amount = parseFloat(req.body.unit_price) * parseInt(req.body.quantity);
     }
+    if (updated.category === 'deposit') updated.is_revenue = false;
     await income.update(updated);
     res.json(income);
   } catch (err) {

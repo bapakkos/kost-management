@@ -27,6 +27,43 @@ exports.getAll = async (req, res) => {
       include: [Tenant],
       order: [['date', 'DESC'], ['id', 'DESC']],
     });
+
+    if (where.is_reconciled === true) {
+      const mutationIds = mutations.map(m => m.id);
+      if (mutationIds.length > 0) {
+        const links = await ReconciliationLink.findAll({
+          where: { bank_mutation_id: { [Op.in]: mutationIds } },
+        });
+        const notaLinks = links.filter(l => l.target_type === 'nota');
+        const receiptIds = [...new Set(notaLinks.map(l => l.target_id))];
+        const receipts = receiptIds.length > 0
+          ? await PaymentReceipt.findAll({ where: { id: { [Op.in]: receiptIds } }, include: [Tenant] })
+          : [];
+        const receiptById = new Map(receipts.map(r => [r.id, r]));
+        const linkByMutation = new Map();
+        for (const l of notaLinks) {
+          if (!linkByMutation.has(l.bank_mutation_id)) {
+            linkByMutation.set(l.bank_mutation_id, receiptById.get(l.target_id) || null);
+          }
+        }
+        for (const m of mutations) {
+          const receipt = linkByMutation.get(m.id);
+          if (receipt) {
+            m.dataValues.reconciliation = {
+              receipt_no: receipt.receipt_no,
+              payment_date: receipt.payment_date,
+              tenant: receipt.Tenant
+                ? { id: receipt.Tenant.id, nama_panggilan: receipt.Tenant.nama_panggilan, name: receipt.Tenant.name }
+                : null,
+            };
+          } else {
+            const hasDeposit = links.some(l => l.bank_mutation_id === m.id && l.target_type === 'deposit_return');
+            m.dataValues.reconciliation = hasDeposit ? { type: 'deposit_return' } : null;
+          }
+        }
+      }
+    }
+
     res.json(mutations);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -147,18 +184,24 @@ const AMOUNT_TOLERANCE = 100;
 
 function findAmountMatch(amount, billings, incomes) {
   const amt = parseFloat(amount);
+  const incList = incomes || [];
+  const incSum = (list) => list.reduce((s, i) => s + parseFloat(i.total_amount), 0);
 
+  if (billings.length === 0 && incList.length === 0) return null;
+
+  // 1. single billing
   for (const b of billings) {
     if (Math.abs(parseFloat(b.total_amount) - amt) <= AMOUNT_TOLERANCE) {
       return { billings: [b], incomes: [], discount: 0 };
     }
   }
-  for (const inc of incomes) {
+  // 2. single income (e.g. deposit-only transfer)
+  for (const inc of incList) {
     if (Math.abs(parseFloat(inc.total_amount) - amt) <= AMOUNT_TOLERANCE) {
       return { billings: [], incomes: [inc], discount: 0 };
     }
   }
-
+  // 3. billing run + optional incomes
   const sorted = [...billings].sort((a, b) => {
     if (a.period_year !== b.period_year) return a.period_year - b.period_year;
     return a.period_month - b.period_month;
@@ -172,22 +215,47 @@ function findAmountMatch(amount, billings, incomes) {
       const expMonth = prev.period_month === 12 ? 1 : prev.period_month + 1;
       const expYear = prev.period_month === 12 ? prev.period_year + 1 : prev.period_year;
       if (curr.period_month !== expMonth || curr.period_year !== expYear) break;
-
       run.push(curr);
-      const months = run.length;
-      const sum = run.reduce((s, b) => s + parseFloat(b.total_amount), 0);
 
+      const months = run.length;
+      const billingSum = run.reduce((s, b) => s + parseFloat(b.total_amount), 0);
       const promo = calculateDiscount(months);
-      if (promo > 0 && Math.abs((sum - promo) - amt) <= AMOUNT_TOLERANCE) {
-        return { billings: [...run], incomes: [], discount: promo };
-      }
-      if (Math.abs(sum - amt) <= AMOUNT_TOLERANCE) {
-        return { billings: [...run], incomes: [], discount: 0 };
+
+      for (const combo of incomeCombos(incList)) {
+        const comboSum = incSum(combo);
+        const base = billingSum + comboSum;
+        if (promo > 0 && Math.abs((base - promo) - amt) <= AMOUNT_TOLERANCE) {
+          return { billings: [...run], incomes: combo, discount: promo };
+        }
+        if (Math.abs(base - amt) <= AMOUNT_TOLERANCE) {
+          return { billings: [...run], incomes: combo, discount: 0 };
+        }
       }
     }
   }
 
+  // 4. incomes only (multiple combined, no billing)
+  for (const combo of incomeCombos(incList)) {
+    if (combo.length < 2) continue;
+    if (Math.abs(incSum(combo) - amt) <= AMOUNT_TOLERANCE) {
+      return { billings: [], incomes: combo, discount: 0 };
+    }
+  }
+
   return null;
+}
+
+// generate all non-empty subsets of incomes (capped to keep cost reasonable)
+function incomeCombos(incomes) {
+  const n = incomes.length;
+  const res = [];
+  const max = Math.min(1 << n, 1 << 12);
+  for (let mask = 1; mask < max; mask++) {
+    const combo = [];
+    for (let k = 0; k < n; k++) if (mask & (1 << k)) combo.push(incomes[k]);
+    res.push(combo);
+  }
+  return res;
 }
 
 async function reconcileOne(mutation, userId) {
@@ -240,7 +308,7 @@ async function reconcileOne(mutation, userId) {
     const roomId = contract?.room_id || match.incomes[0]?.room_id;
 
     const lastReceipt = await PaymentReceipt.findOne({ order: [['id', 'DESC']], transaction: t });
-    const lastNum = lastReceipt ? parseInt((lastReceipt.receipt_no || '').replace(/\D/g, '')) || 0 : 0;
+    const lastNum = lastReceipt ? (parseInt((lastReceipt.receipt_no || '').split('-').pop(), 10) || 0) : 0;
     const receiptNo = `NOTA-${new Date(mutation.date).toISOString().slice(0, 7).replace('-', '')}-${String(lastNum + 1).padStart(4, '0')}`;
 
     const receipt = await PaymentReceipt.create({

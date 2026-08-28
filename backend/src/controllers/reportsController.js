@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const {
   MonthlyBilling, NonMonthlyIncome, PaymentReceipt, BankMutation, ReconciliationLink,
-  RentalContract, Tenant, Room, RoomType,
+  RentalContract, Tenant, Room, RoomType, DepositReturn,
 } = require('../models');
 const { generateInvoicePDF } = require('../utils/pdfGenerator');
 
@@ -93,6 +93,55 @@ exports.getYearlyRevenue = async (req, res) => {
     }
 
     res.json({ year: y, months });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getDepositLiability = async (req, res) => {
+  try {
+    const collectedRows = await NonMonthlyIncome.findAll({
+      where: { category: 'deposit', is_paid: true },
+      include: [Tenant, Room],
+    });
+    const forfeitedRows = await NonMonthlyIncome.findAll({
+      where: { category: 'deposit_hangus', is_paid: true },
+      include: [Tenant, Room],
+    });
+    const returns = await DepositReturn.findAll({ include: [{ model: RentalContract, include: [Tenant, Room] }] });
+
+    const collected = collectedRows.reduce((s, r) => s + parseFloat(r.total_amount), 0);
+    const forfeited = forfeitedRows.reduce((s, r) => s + parseFloat(r.total_amount), 0);
+    const returned = returns.reduce((s, r) => s + parseFloat(r.amount), 0);
+    const active_liability = collected - forfeited - returned;
+
+    const byTenant = {};
+    const addRow = (row, bucket) => {
+      if (!row.Tenant) return;
+      const tid = row.Tenant.id;
+      if (!byTenant[tid]) {
+        byTenant[tid] = { tenant_id: tid, tenant_name: row.Tenant.nama_panggilan || row.Tenant.name, room: row.Room?.room_number || null, collected: 0, forfeited: 0, returned: 0 };
+      }
+      byTenant[tid][bucket] += parseFloat(row.total_amount || row.amount || 0);
+    };
+    collectedRows.forEach((r) => addRow(r, 'collected'));
+    forfeitedRows.forEach((r) => addRow(r, 'forfeited'));
+    returns.forEach((r) => {
+      if (r.RentalContract && r.RentalContract.Tenant) addRow(r.RentalContract, 'returned');
+    });
+
+    const breakdown = Object.values(byTenant).map((b) => ({
+      ...b,
+      active: b.collected - b.forfeited - b.returned,
+    }));
+
+    res.json({
+      total_collected: collected,
+      total_forfeited: forfeited,
+      total_returned: returned,
+      active_liability,
+      breakdown,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

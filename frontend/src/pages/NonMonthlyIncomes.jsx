@@ -162,6 +162,7 @@ export default function NonMonthlyIncomes() {
             <th>Category</th>
             <th>Description</th>
             <th>Total</th>
+            <th>Pendapatan</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -175,6 +176,13 @@ export default function NonMonthlyIncomes() {
               <td>{inc.category}</td>
               <td>{inc.description || '-'}</td>
               <td><strong>{formatRp(inc.total_amount)}</strong></td>
+              <td>
+                {inc.category === 'deposit'
+                  ? <span style={{ color: '#1890ff', fontWeight: 600 }}>Non-Revenue</span>
+                  : inc.is_revenue
+                    ? <span style={{ color: '#52c41a' }}>Ya</span>
+                    : <span style={{ color: '#999' }}>Tidak</span>}
+              </td>
               <td><span style={{ color: inc.is_paid ? '#4CAF50' : '#ff4d4f', fontWeight: 600 }}>{inc.is_paid ? 'LUNAS' : 'UNPAID'}</span></td>
               <td>
                 <button className="btn btn-primary btn-sm" onClick={() => handleEdit(inc)}>Edit</button>
@@ -184,7 +192,7 @@ export default function NonMonthlyIncomes() {
             </tr>
           ))}
           {incomes.length === 0 && (
-            <tr><td colSpan="8" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No incomes yet</td></tr>
+            <tr><td colSpan="9" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No incomes yet</td></tr>
           )}
         </tbody>
       </table>

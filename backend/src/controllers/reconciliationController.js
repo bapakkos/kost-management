@@ -102,7 +102,7 @@ exports.reconcile = async (req, res) => {
       order: [['id', 'DESC']],
       transaction: t,
     });
-    const lastNum = lastReceipt ? parseInt((lastReceipt.receipt_no || '').replace(/\D/g, '')) || 0 : 0;
+    const lastNum = lastReceipt ? (parseInt((lastReceipt.receipt_no || '').split('-').pop(), 10) || 0) : 0;
     const receiptNo = `NOTA-${new Date(paymentDate).toISOString().slice(0, 7).replace('-', '')}-${String(lastNum + 1).padStart(4, '0')}`;
 
     const receipt = await PaymentReceipt.create({
@@ -161,6 +161,122 @@ exports.reconcile = async (req, res) => {
       promo_applied: promoApplied,
       discount_amount: discountAmount,
     });
+  } catch (err) {
+    await t.rollback();
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.undo = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { mutation_ids } = req.body;
+    if (!Array.isArray(mutation_ids) || mutation_ids.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'At least one mutation_id is required' });
+    }
+
+    const mutations = await BankMutation.findAll({
+      where: { id: { [Op.in]: mutation_ids }, is_reconciled: true },
+      transaction: t,
+    });
+    if (mutations.length !== mutation_ids.length) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Some mutations not found or not reconciled' });
+    }
+
+    const links = await ReconciliationLink.findAll({
+      where: { bank_mutation_id: { [Op.in]: mutation_ids }, target_type: 'nota' },
+      transaction: t,
+    });
+    if (links.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'No reconciliation links found for these mutations' });
+    }
+
+    const receiptIds = [...new Set(links.map(l => l.target_id))];
+
+    const allLinksForReceipts = await ReconciliationLink.findAll({
+      where: { target_type: 'nota', target_id: { [Op.in]: receiptIds } },
+      transaction: t,
+    });
+
+    const requestedSet = new Set(mutation_ids.map(Number));
+    for (const receiptId of receiptIds) {
+      const linkedMutations = allLinksForReceipts
+        .filter(l => l.target_id === receiptId)
+        .map(l => l.bank_mutation_id);
+      const notIncluded = linkedMutations.filter(id => !requestedSet.has(Number(id)));
+      if (notIncluded.length > 0) {
+        await t.rollback();
+        return res.status(400).json({
+          error: `Nota #${receiptId} ter-link ke mutasi lain (id: ${notIncluded.join(', ')}). Undo harus mencakup semua mutasi yang ter-link ke nota ini.`,
+        });
+      }
+    }
+
+    const depositLinks = await ReconciliationLink.findAll({
+      where: { bank_mutation_id: { [Op.in]: mutation_ids }, target_type: 'deposit_return' },
+      transaction: t,
+    });
+    if (depositLinks.length > 0) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Mutasi ini ter-link ke deposit return; undo deposit tidak didukung di sini.' });
+    }
+
+    let receiptsDeleted = 0;
+
+    for (const receiptId of receiptIds) {
+      const receipt = await PaymentReceipt.findByPk(receiptId, { transaction: t });
+      if (!receipt) continue;
+
+      const items = await PaymentReceiptItem.findAll({
+        where: { payment_receipt_id: receiptId },
+        order: [['id', 'ASC']],
+        transaction: t,
+      });
+
+      const discountToRevert = parseFloat(receipt.discount_amount) || 0;
+      let discountReverted = false;
+
+      for (const item of items) {
+        if (item.item_type === 'monthly_billing' && item.monthly_billing_id) {
+          const billing = await MonthlyBilling.findByPk(item.monthly_billing_id, { transaction: t });
+          if (billing) {
+            billing.is_paid = false;
+            billing.paid_date = null;
+            billing.paid_amount = null;
+            if (discountToRevert > 0 && !discountReverted) {
+              const curDiscount = parseFloat(billing.discount) || 0;
+              billing.discount = Math.max(0, curDiscount - discountToRevert);
+              billing.total_amount = parseFloat(billing.total_amount) + discountToRevert;
+              discountReverted = true;
+            }
+            await billing.save({ transaction: t });
+          }
+        } else if (item.item_type === 'non_monthly_income' && item.non_monthly_income_id) {
+          const income = await NonMonthlyIncome.findByPk(item.non_monthly_income_id, { transaction: t });
+          if (income) {
+            income.is_paid = false;
+            income.paid_date = null;
+            await income.save({ transaction: t });
+          }
+        }
+      }
+
+      await PaymentReceiptItem.destroy({ where: { payment_receipt_id: receiptId }, transaction: t });
+      await ReconciliationLink.destroy({ where: { target_type: 'nota', target_id: receiptId }, transaction: t });
+      await receipt.destroy({ transaction: t });
+      receiptsDeleted++;
+    }
+
+    for (const m of mutations) {
+      m.is_reconciled = false;
+      await m.save({ transaction: t });
+    }
+
+    await t.commit();
+    res.json({ undone: mutations.length, receipts_deleted: receiptsDeleted });
   } catch (err) {
     await t.rollback();
     res.status(500).json({ error: err.message });
