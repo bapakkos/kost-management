@@ -214,6 +214,8 @@ export default function BankReconciliation() {
 
     if (!consecutive) return null;
 
+    if (parseFloat(sorted[0].discount) > 0) return null;
+
     if (sorted.length === 12) {
       return { months: 12, discount: 1000000, label: '12 months consecutive — suggest discount Rp 1.000.000' };
     }

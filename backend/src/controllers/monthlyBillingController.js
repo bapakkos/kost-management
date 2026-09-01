@@ -4,7 +4,9 @@ const {
   PricingScheme, PricingSchemeRate,
 } = require('../models');
 const { calculateBillingTotal } = require('../utils/priceCalculator');
-const { calculateDueDate } = require('../utils/dueDateCalculator');
+const { resolveDueDate, formatYYYYMMDD } = require('../utils/dueDateCalculator');
+const { resolveSecondMonthProrate } = require('../utils/prorateCalculator');
+const { calculateDiscount } = require('../utils/discountCalculator');
 
 exports.getAll = async (req, res) => {
   try {
@@ -50,15 +52,15 @@ exports.create = async (req, res) => {
       where: { pricing_scheme_id: contract.pricing_scheme_id, room_type_id: contract.Room.room_type_id },
     });
 
-    const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
+    const baseRentFull = rate ? parseFloat(rate.monthly_price) : 0;
+    const { rent: baseRent, isProrate, notes } = resolveSecondMonthProrate(contract, baseRentFull, period_month, period_year);
     const addonParkir = req.body.addon_parkir != null ? req.body.addon_parkir : 0;
     const addonTv = req.body.addon_tv != null ? req.body.addon_tv : 0;
     const addonInternet = req.body.addon_internet != null ? req.body.addon_internet : 0;
     const discount = req.body.discount != null ? req.body.discount : 0;
     const total = baseRent + addonParkir + addonTv + addonInternet - discount;
 
-    const dueDate = calculateDueDate(contract.start_date);
-    const dueDateStr = new Date(period_year, period_month - 1, dueDate.getDate()).toISOString().slice(0, 10);
+    const dueDateStr = formatYYYYMMDD(resolveDueDate(contract.start_date, period_month, period_year, isProrate));
 
     const billing = await MonthlyBilling.create({
       rental_contract_id: contract.id,
@@ -71,8 +73,15 @@ exports.create = async (req, res) => {
       discount,
       due_date: dueDateStr,
       total_amount: total,
+      is_prorate: isProrate,
+      notes,
       is_paid: false,
     });
+
+    if (isProrate) {
+      contract.prorate_pending = false;
+      await contract.save();
+    }
 
     res.status(201).json(billing);
   } catch (err) {
@@ -174,13 +183,20 @@ exports.generate = async (req, res) => {
 
       if (existing) {
         if (!force) continue;
-        // Recalculate from current price scheme, preserving addons/discount/paid status/notes
+        // Recalculate from current price scheme, preserving addons/discount/paid status
         const addonParkir = parseFloat(existing.addon_parkir) || 0;
         const addonTv = parseFloat(existing.addon_tv) || 0;
         const addonInternet = parseFloat(existing.addon_internet) || 0;
         const discount = parseFloat(existing.discount) || 0;
-        const total = baseRent + addonParkir + addonTv + addonInternet - discount;
-        await existing.update({ base_rent: baseRent, total_amount: total });
+        const { rent, isProrate, notes } = resolveSecondMonthProrate(contract, baseRent, month, year, existing.is_prorate);
+        const total = rent + addonParkir + addonTv + addonInternet - discount;
+        await existing.update({
+          base_rent: rent,
+          total_amount: total,
+          is_prorate: isProrate,
+          due_date: formatYYYYMMDD(resolveDueDate(contract.start_date, month, year, isProrate)),
+          ...(notes ? { notes } : {}),
+        });
         updated.push(existing);
         continue;
       }
@@ -196,24 +212,32 @@ exports.generate = async (req, res) => {
       const addonTv = prevBilling ? parseFloat(prevBilling.addon_tv) : 0;
       const addonInternet = prevBilling ? parseFloat(prevBilling.addon_internet) : 0;
       const discount = prevBilling ? parseFloat(prevBilling.discount) : 0;
-      const total = baseRent + addonParkir + addonTv + addonInternet - discount;
-      const dueDate = calculateDueDate(contract.start_date);
-      const dueDateStr = new Date(year, month - 1, dueDate.getDate()).toISOString().slice(0, 10);
+
+      const { rent, isProrate, notes } = resolveSecondMonthProrate(contract, baseRent, month, year);
+      const total = rent + addonParkir + addonTv + addonInternet - discount;
+      const dueDateStr = formatYYYYMMDD(resolveDueDate(contract.start_date, month, year, isProrate));
 
       const billing = await MonthlyBilling.create({
         rental_contract_id: contract.id,
         period_month: month,
         period_year: year,
-        base_rent: baseRent,
+        base_rent: rent,
         addon_parkir: addonParkir,
         addon_tv: addonTv,
         addon_internet: addonInternet,
         discount,
         due_date: dueDateStr,
         total_amount: total,
+        is_prorate: isProrate,
+        notes,
         is_paid: false,
       });
       created.push(billing);
+
+      if (isProrate) {
+        contract.prorate_pending = false;
+        await contract.save();
+      }
     }
 
     res.json({ created: created.length, updated: updated.length, month, year });
@@ -227,6 +251,10 @@ exports.generateBulk = async (req, res) => {
     const { contract_id, start_month, start_year, months } = req.body;
     if (!contract_id || !start_month || !start_year || !months) {
       return res.status(400).json({ error: 'contract_id, start_month, start_year, months are required' });
+    }
+    const monthsCount = parseInt(months);
+    if (isNaN(monthsCount) || monthsCount < 1 || monthsCount > 12) {
+      return res.status(400).json({ error: 'months must be an integer between 1 and 12' });
     }
 
     const contract = await RentalContract.findByPk(contract_id, {
@@ -253,7 +281,7 @@ exports.generateBulk = async (req, res) => {
     let cm = parseInt(start_month);
     let cy = parseInt(start_year);
 
-    for (let i = 0; i < parseInt(months); i++) {
+    for (let i = 0; i < monthsCount; i++) {
       const existing = await MonthlyBilling.findOne({
         where: { rental_contract_id: contract.id, period_month: cm, period_year: cy },
       });
@@ -265,8 +293,7 @@ exports.generateBulk = async (req, res) => {
       }
 
       const total = baseRent + addonParkir + addonTv + addonInternet;
-      const dueDate = calculateDueDate(contract.start_date);
-      const dueDateStr = new Date(cy, cm - 1, dueDate.getDate()).toISOString().slice(0, 10);
+      const dueDateStr = formatYYYYMMDD(resolveDueDate(contract.start_date, cm, cy, false));
 
       const billing = await MonthlyBilling.create({
         rental_contract_id: contract.id,
@@ -279,6 +306,7 @@ exports.generateBulk = async (req, res) => {
         discount: 0,
         due_date: dueDateStr,
         total_amount: total,
+        is_prorate: false,
         is_paid: false,
       });
       created.push(billing);
@@ -287,7 +315,33 @@ exports.generateBulk = async (req, res) => {
       if (cm === 1) cy++;
     }
 
-    res.json({ created: created.length, skipped: skipped.length, months: parseInt(months) });
+    let discountApplied = false;
+    let discountAmount = calculateDiscount(monthsCount);
+    if (discountAmount > 0) {
+      const firstBilling = await MonthlyBilling.findOne({
+        where: {
+          rental_contract_id: contract.id,
+          period_month: parseInt(start_month),
+          period_year: parseInt(start_year),
+        },
+      });
+      if (firstBilling && !firstBilling.is_paid && !(parseFloat(firstBilling.discount) > 0)) {
+        firstBilling.discount = discountAmount;
+        firstBilling.total_amount = parseFloat(firstBilling.total_amount) - discountAmount;
+        await firstBilling.save();
+        discountApplied = true;
+      } else {
+        discountAmount = 0;
+      }
+    }
+
+    res.json({
+      created: created.length,
+      skipped: skipped.length,
+      months: monthsCount,
+      discount_applied: discountApplied,
+      discount_amount: discountAmount,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

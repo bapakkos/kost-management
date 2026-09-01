@@ -4,7 +4,8 @@ const {
   MonthlyBilling,
 } = require('../models');
 const { calculateBillingTotal } = require('../utils/priceCalculator');
-const { calculateDueDate } = require('../utils/dueDateCalculator');
+const { resolveDueDate, formatYYYYMMDD } = require('../utils/dueDateCalculator');
+const { resolveSecondMonthProrate } = require('../utils/prorateCalculator');
 
 // GET /api/main-page/:month/:year
 // Returns full room list with tenant, billing, and check-out info for the month
@@ -78,6 +79,7 @@ exports.getMonthView = async (req, res) => {
         check_out_this_month: checkOutThisMonth,
         contract_id: contract ? contract.id : null,
         pricing_scheme: contract ? (contract.PricingScheme ? contract.PricingScheme.name : null) : null,
+        prorate_pending: contract ? !!contract.prorate_pending : false,
         billing: billing ? {
           id: billing.id,
           base_rent: billing.base_rent,
@@ -186,27 +188,32 @@ exports.generateBillings = async (req, res) => {
       const addonTv = prevBilling ? parseFloat(prevBilling.addon_tv) : 0;
       const addonInternet = prevBilling ? parseFloat(prevBilling.addon_internet) : 0;
       const discount = prevBilling ? parseFloat(prevBilling.discount) : 0;
-      const total = baseRent + addonParkir + addonTv + addonInternet - discount;
 
-      const dueDate = calculateDueDate(contract.start_date);
-      const dueDateStr = new Date(year, month - 1, dueDate.getDate()).toISOString().slice(0, 10);
+      const { rent, isProrate, notes } = resolveSecondMonthProrate(contract, baseRent, month, year);
+      const total = rent + addonParkir + addonTv + addonInternet - discount;
+      const dueDateStr = formatYYYYMMDD(resolveDueDate(contract.start_date, month, year, isProrate));
 
       const billing = await MonthlyBilling.create({
         rental_contract_id: contract.id,
         period_month: month,
         period_year: year,
-        base_rent: baseRent,
+        base_rent: rent,
         addon_parkir: addonParkir,
         addon_tv: addonTv,
         addon_internet: addonInternet,
         discount,
         due_date: dueDateStr,
         total_amount: total,
-        is_prorate: false,
+        is_prorate: isProrate,
+        notes,
         is_paid: false,
       });
-
       created.push(billing);
+
+      if (isProrate) {
+        contract.prorate_pending = false;
+        await contract.save();
+      }
     }
 
     res.json({

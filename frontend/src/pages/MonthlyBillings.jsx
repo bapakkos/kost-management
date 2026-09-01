@@ -59,7 +59,10 @@ export default function MonthlyBillings() {
         start_year: parseInt(bulkForm.start_year),
         months: parseInt(bulkForm.months),
       });
-      setBulkMsg(`Created ${data.created} billings, skipped ${data.skipped}`);
+      setBulkMsg(
+        `Created ${data.created} billings, skipped ${data.skipped}` +
+        (data.discount_applied ? `, diskon promo ${formatRp(data.discount_amount)} diterapkan ke bulan pertama` : '')
+      );
       fetch();
     } catch (err) {
       setBulkMsg(err.response?.data?.error || 'Failed');
@@ -225,8 +228,11 @@ export default function MonthlyBillings() {
             <label>Months</label>
             <select value={bulkForm.months} onChange={e => setBulkForm({ ...bulkForm, months: e.target.value })}>
               <option value="">--</option>
-              <option value="6">6</option>
-              <option value="12">12</option>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                <option key={m} value={m}>
+                  {m === 6 ? '6 — diskon Rp 500.000' : m === 12 ? '12 — diskon Rp 1.000.000' : m}
+                </option>
+              ))}
             </select>
           </div>
           <div className="form-group" style={{ alignSelf: 'flex-end' }}>
@@ -254,30 +260,40 @@ export default function MonthlyBillings() {
           </tr>
         </thead>
         <tbody>
-          {billings.map(b => (
-            <tr key={b.id}>
-              <td>{MONTHS[b.period_month - 1]} {b.period_year}</td>
-              <td>{b.RentalContract?.Room?.room_number || '-'}</td>
-              <td>{b.RentalContract?.Tenant?.nama_panggilan || b.RentalContract?.Tenant?.name || '-'}</td>
-              <td>{formatRp(b.base_rent)}</td>
-              <td>{formatRp(b.addon_parkir)}</td>
-              <td>{formatRp(b.addon_tv)}</td>
-              <td>{formatRp(b.addon_internet)}</td>
-              <td>{formatRp(b.discount)}</td>
-              <td><strong>{formatRp(b.total_amount)}</strong></td>
-              <td>{b.due_date ? new Date(b.due_date).toLocaleDateString('id-ID') : '-'}</td>
-              <td className={b.is_paid ? 'paid' : 'unpaid'}>
-                {b.is_paid ? '✅ Paid' : '❌ Unpaid'}
-              </td>
-              <td>
-                <button className="btn btn-primary btn-sm" onClick={() => openEdit(b)}>Edit</button>
-                <button className="btn btn-sm" style={{ marginLeft: 4, background: '#1890ff', color: '#fff' }} onClick={() => handleInvoicePDF(b.id)}>PDF</button>
-                {!b.is_paid && (
-                  <button className="btn btn-success btn-sm" style={{ marginLeft: 4 }} onClick={() => handleMarkPaid(b.id)}>Mark Paid</button>
-                )}
-              </td>
-            </tr>
-          ))}
+          {billings.map(b => {
+            const needProrate = !!b.RentalContract?.prorate_pending;
+            const isProrate = !!b.is_prorate;
+            return (
+              <tr key={b.id} style={needProrate ? { fontStyle: 'italic' } : undefined}>
+                <td>{MONTHS[b.period_month - 1]} {b.period_year}</td>
+                <td>{b.RentalContract?.Room?.room_number || '-'}</td>
+                <td>
+                  {b.RentalContract?.Tenant?.nama_panggilan || b.RentalContract?.Tenant?.name || '-'}
+                  {needProrate && <span style={{ color: '#faad14', marginLeft: 6, fontSize: 12 }}>*perlu prorate*</span>}
+                </td>
+                <td>
+                  {formatRp(b.base_rent)}
+                  {isProrate && <span style={{ background: '#faad14', color: '#fff', borderRadius: 4, padding: '1px 6px', marginLeft: 6, fontSize: 11 }}>Prorate</span>}
+                </td>
+                <td>{formatRp(b.addon_parkir)}</td>
+                <td>{formatRp(b.addon_tv)}</td>
+                <td>{formatRp(b.addon_internet)}</td>
+                <td>{formatRp(b.discount)}</td>
+                <td><strong>{formatRp(b.total_amount)}</strong></td>
+                <td>{b.due_date ? new Date(b.due_date).toLocaleDateString('id-ID') : '-'}</td>
+                <td className={b.is_paid ? 'paid' : 'unpaid'}>
+                  {b.is_paid ? '✅ Paid' : '❌ Unpaid'}
+                </td>
+                <td>
+                  <button className="btn btn-primary btn-sm" onClick={() => openEdit(b)}>Edit</button>
+                  <button className="btn btn-sm" style={{ marginLeft: 4, background: '#1890ff', color: '#fff' }} onClick={() => handleInvoicePDF(b.id)}>PDF</button>
+                  {!b.is_paid && (
+                    <button className="btn btn-success btn-sm" style={{ marginLeft: 4 }} onClick={() => handleMarkPaid(b.id)}>Mark Paid</button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
           {billings.length === 0 && (
             <tr><td colSpan="12" style={{ color: '#bbb', fontStyle: 'italic', textAlign: 'center' }}>No billings found</td></tr>
           )}

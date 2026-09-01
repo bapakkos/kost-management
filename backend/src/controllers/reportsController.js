@@ -164,7 +164,10 @@ exports.getInvoicePDF = async (req, res) => {
       date = billing.due_date || billing.createdAt;
       invoiceNo = `INV-M${billing.id}`;
       const parts = [];
-      if (parseFloat(billing.base_rent) > 0) parts.push({ description: `Sewa Bulanan ${period}`, amount: `Rp ${Number(billing.base_rent).toLocaleString('id-ID')}` });
+      if (parseFloat(billing.base_rent) > 0) {
+        const prorateNote = billing.is_prorate && billing.notes ? ` (${billing.notes})` : '';
+        parts.push({ description: `Sewa Bulanan ${period}${prorateNote}`, amount: `Rp ${Number(billing.base_rent).toLocaleString('id-ID')}` });
+      }
       if (parseFloat(billing.addon_parkir) > 0) parts.push({ description: 'Addon Parkir', amount: `Rp ${Number(billing.addon_parkir).toLocaleString('id-ID')}` });
       if (parseFloat(billing.addon_tv) > 0) parts.push({ description: 'Addon TV', amount: `Rp ${Number(billing.addon_tv).toLocaleString('id-ID')}` });
       if (parseFloat(billing.addon_internet) > 0) parts.push({ description: 'Addon Internet', amount: `Rp ${Number(billing.addon_internet).toLocaleString('id-ID')}` });

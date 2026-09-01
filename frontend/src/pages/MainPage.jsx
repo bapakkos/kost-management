@@ -109,17 +109,24 @@ export default function MainPage() {
                 <tbody>
                   {roomsByFloor(floor).map(room => {
                     const isCheckout = room.check_out_this_month;
+                    const needProrate = !!room.prorate_pending;
                     const b = room.billing;
                     const addons = b ? ((b.addon_parkir || 0) + (b.addon_tv || 0) + (b.addon_internet || 0)) : 0;
                     return (
-                      <tr key={room.room_id} className={isCheckout ? 'checkout-row' : ''}>
+                      <tr key={room.room_id} className={isCheckout ? 'checkout-row' : ''} style={needProrate ? { fontStyle: 'italic' } : undefined}>
                         <td><strong>{room.room_number}</strong></td>
                         <td>{room.room_type || <span className="empty">-</span>}</td>
-                        <td>{room.tenant || <span className="empty">Kosong</span>}</td>
+                        <td>
+                          {room.tenant || <span className="empty">Kosong</span>}
+                          {needProrate && <span style={{ color: '#faad14', marginLeft: 6, fontSize: 12 }}>*perlu prorate*</span>}
+                        </td>
                         <td>{room.check_out_this_month ? '🔴 Keluar' : room.tenant ? '🟢 Sewa' : '⚪ Available'}</td>
                         <td>{room.check_in ? new Date(room.check_in).toLocaleDateString('id-ID') : '-'}</td>
                         <td>{room.check_out ? new Date(room.check_out).toLocaleDateString('id-ID') : '-'}</td>
-                        <td>{b ? formatRp(b.base_rent) : '-'}</td>
+                        <td>
+                          {b ? formatRp(b.base_rent) : '-'}
+                          {b?.is_prorate && <span style={{ background: '#faad14', color: '#fff', borderRadius: 4, padding: '1px 6px', marginLeft: 6, fontSize: 11 }}>Prorate</span>}
+                        </td>
                         <td>{b ? formatRp(addons) : '-'}</td>
                         <td>{b ? formatRp(b.discount) : '-'}</td>
                         <td>{b ? formatRp(b.total_amount) : '-'}</td>

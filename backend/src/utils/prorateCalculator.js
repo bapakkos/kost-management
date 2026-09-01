@@ -7,4 +7,37 @@ function calculateProrate(monthlyPrice, startDate, endDate) {
   return (monthlyPrice / daysInMonth) * daysOccupied;
 }
 
-module.exports = { calculateProrate };
+// Prorate bulan penyelarasan: penghuni check-in tgl D (bukan tgl 1),
+// bulan pertama yang ditagih bulanan hanya bayar (D+1) s/d akhir bulan.
+// Contoh: check-in 3, bulan 31 hari -> 28 hari.
+function calculateSecondMonthProrate(baseRent, checkInDay, periodMonth, periodYear) {
+  const daysInMonth = new Date(periodYear, periodMonth, 0).getDate();
+  const prorateDays = daysInMonth - checkInDay;
+  if (prorateDays <= 0) return 0;
+  return (baseRent / daysInMonth) * prorateDays;
+}
+
+// Menentukan apakah billing periode ini adalah bulan penyelarasan prorate.
+// forceIsProrate: recalc billing yang sudah is_prorate (pending mungkin sudah mati).
+function resolveSecondMonthProrate(contract, baseRent, periodMonth, periodYear, forceIsProrate = false) {
+  const start = new Date(contract.start_date);
+  const checkInDay = start.getDate();
+  const checkInIndex = start.getFullYear() * 12 + start.getMonth();
+  const periodIndex = periodYear * 12 + (periodMonth - 1);
+
+  const shouldProrate = forceIsProrate
+    || (contract.prorate_pending && checkInDay !== 1 && periodIndex > checkInIndex);
+
+  if (!shouldProrate) return { rent: baseRent, isProrate: false, notes: null };
+
+  const rent = calculateSecondMonthProrate(baseRent, checkInDay, periodMonth, periodYear);
+  if (!(rent > 0)) return { rent: baseRent, isProrate: false, notes: null };
+
+  const daysInMonth = new Date(periodYear, periodMonth, 0).getDate();
+  const prorateDays = daysInMonth - checkInDay;
+  const notes = `Prorate ${checkInDay + 1}-${daysInMonth}/${periodMonth}/${periodYear} (${prorateDays} hari)`;
+
+  return { rent, isProrate: true, notes };
+}
+
+module.exports = { calculateProrate, calculateSecondMonthProrate, resolveSecondMonthProrate };

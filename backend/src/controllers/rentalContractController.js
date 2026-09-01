@@ -70,6 +70,7 @@ exports.create = async (req, res) => {
       start_date,
       deposit_amount: deposit_amount || 1000000,
       status: new Date(start_date) > new Date() ? 'booking' : 'sewa',
+      prorate_pending: new Date(start_date).getDate() !== 1,
     });
 
     // Update room status

@@ -219,7 +219,8 @@ function findAmountMatch(amount, billings, incomes) {
 
       const months = run.length;
       const billingSum = run.reduce((s, b) => s + parseFloat(b.total_amount), 0);
-      const promo = calculateDiscount(months);
+      const firstDisc = parseFloat(run[0].discount) || 0;
+      const promo = Math.max(0, calculateDiscount(months) - firstDisc);
 
       for (const combo of incomeCombos(incList)) {
         const comboSum = incSum(combo);
@@ -245,12 +246,12 @@ function findAmountMatch(amount, billings, incomes) {
   return null;
 }
 
-// generate all non-empty subsets of incomes (capped to keep cost reasonable)
+// generate all subsets of incomes (including empty), capped to keep cost reasonable
 function incomeCombos(incomes) {
   const n = incomes.length;
   const res = [];
   const max = Math.min(1 << n, 1 << 12);
-  for (let mask = 1; mask < max; mask++) {
+  for (let mask = 0; mask < max; mask++) {
     const combo = [];
     for (let k = 0; k < n; k++) if (mask & (1 << k)) combo.push(incomes[k]);
     res.push(combo);

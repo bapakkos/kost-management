@@ -71,10 +71,16 @@ exports.reconcile = async (req, res) => {
         })[0];
 
         const firstDisc = parseFloat(firstBilling.discount) || 0;
-        firstBilling.discount = firstDisc + discountAmount;
-        firstBilling.total_amount = parseFloat(firstBilling.total_amount) - discountAmount;
-        await firstBilling.save({ transaction: t });
-        promoApplied = true;
+        const additional = Math.max(0, discountAmount - firstDisc);
+        if (additional > 0) {
+          firstBilling.discount = firstDisc + additional;
+          firstBilling.total_amount = parseFloat(firstBilling.total_amount) - additional;
+          await firstBilling.save({ transaction: t });
+          discountAmount = additional;
+          promoApplied = true;
+        } else {
+          discountAmount = 0;
+        }
       } else {
         discountAmount = 0;
       }
