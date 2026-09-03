@@ -12,6 +12,7 @@ const RentalContract = sequelize.define('RentalContract', {
   deposit_status: { type: DataTypes.ENUM('active', 'forfeited', 'returned'), defaultValue: 'active' },
   status: { type: DataTypes.ENUM('booking', 'sewa', 'keluar') },
   prorate_pending: { type: DataTypes.BOOLEAN, defaultValue: false },
+  prepaid_months: { type: DataTypes.INTEGER, defaultValue: 1 },
 }, { tableName: 'rental_contracts', timestamps: true, underscored: true });
 
 module.exports = RentalContract;

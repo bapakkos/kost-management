@@ -25,8 +25,15 @@ function resolveSecondMonthProrate(contract, baseRent, periodMonth, periodYear, 
   const checkInIndex = start.getFullYear() * 12 + start.getMonth();
   const periodIndex = periodYear * 12 + (periodMonth - 1);
 
+  // Prorate biasanya di bulan ke-2, tapi ditunda jika penghuni bayar
+  // beberapa bulan di awal (via generate-bulk). prepaid_months menyimpan
+  // jumlah bulan yang dibayar di awal; prorate baru diterapkan di bulan
+  // pertama setelah blok prepaid (bulan ke-N+1).
+  const prepaidMonths = contract.prepaid_months || 1;
+  const prorateTargetIndex = checkInIndex + prepaidMonths;
+
   const shouldProrate = forceIsProrate
-    || (contract.prorate_pending && checkInDay !== 1 && periodIndex > checkInIndex);
+    || (contract.prorate_pending && checkInDay !== 1 && periodIndex === prorateTargetIndex);
 
   if (!shouldProrate) return { rent: baseRent, isProrate: false, notes: null };
 

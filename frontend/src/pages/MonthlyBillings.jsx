@@ -108,6 +108,8 @@ export default function MonthlyBillings() {
       addon_tv: parseFloat(b.addon_tv) || 0,
       addon_internet: parseFloat(b.addon_internet) || 0,
       discount: parseFloat(b.discount) || 0,
+      base_rent: parseFloat(b.base_rent) || 0,
+      is_prorate: !!b.is_prorate,
       notes: b.notes || '',
     });
   };
@@ -131,7 +133,7 @@ export default function MonthlyBillings() {
   };
 
   const editTotal = editing && editForm
-    ? (parseFloat(editing.base_rent) || 0) + (editForm.addon_parkir || 0) + (editForm.addon_tv || 0) + (editForm.addon_internet || 0) - (editForm.discount || 0)
+    ? (parseFloat(editForm.base_rent) || 0) + (editForm.addon_parkir || 0) + (editForm.addon_tv || 0) + (editForm.addon_internet || 0) - (editForm.discount || 0)
     : 0;
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -313,7 +315,13 @@ export default function MonthlyBillings() {
             </div>
             <div className="form-group">
               <label>Base Rent</label>
-              <input disabled value={formatRp(editing.base_rent)} />
+              <input type="number" value={editForm.base_rent}
+                onChange={e => setEditForm({ ...editForm, base_rent: parseFloat(e.target.value) || 0 })} />
+            </div>
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" id="isProrate" checked={editForm.is_prorate}
+                onChange={e => setEditForm({ ...editForm, is_prorate: e.target.checked })} />
+              <label htmlFor="isProrate" style={{ marginBottom: 0 }}>Tandai sebagai Prorate</label>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <div className="form-group" style={{ flex: 1 }}>

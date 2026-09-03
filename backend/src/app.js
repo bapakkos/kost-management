@@ -31,7 +31,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-sequelize.query('PRAGMA foreign_keys = ON').then(() => sequelize.sync({ force: false })).then(() => {
+sequelize.query('PRAGMA foreign_keys = ON')
+  .then(() => sequelize.query('ALTER TABLE rental_contracts ADD COLUMN prepaid_months INTEGER NOT NULL DEFAULT 1').catch(() => {}))
+  .then(() => sequelize.sync({ force: false })).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

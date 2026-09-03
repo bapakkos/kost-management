@@ -267,6 +267,18 @@ exports.generateBulk = async (req, res) => {
     });
     const baseRent = rate ? parseFloat(rate.monthly_price) : 0;
 
+    // Catat jumlah bulan dibayar di awal (bayar beberapa bulan langsung) agar
+    // prorate ditunda ke bulan pertama setelah blok prepaid (bulan ke-N+1).
+    // Hanya untuk pembayaran pertama (prorate_pending masih true) dan bulk dimulai
+    // tepat di bulan check-in.
+    const startCheckIn = new Date(contract.start_date);
+    const bulkStartsAtCheckIn = parseInt(start_month) === (startCheckIn.getMonth() + 1) &&
+      parseInt(start_year) === startCheckIn.getFullYear();
+    if (contract.prorate_pending && bulkStartsAtCheckIn) {
+      contract.prepaid_months = monthsCount;
+      await contract.save();
+    }
+
     const prevMonth = parseInt(start_month) === 1 ? 12 : parseInt(start_month) - 1;
     const prevYear = parseInt(start_month) === 1 ? parseInt(start_year) - 1 : parseInt(start_year);
     const prevBilling = await MonthlyBilling.findOne({

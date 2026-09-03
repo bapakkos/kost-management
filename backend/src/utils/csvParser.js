@@ -104,16 +104,83 @@ function normalizeHeader(h) {
   return null;
 }
 
+function detectDelimiter(csvText) {
+  const firstLine = csvText.split(/\r?\n/).find(l => {
+    const t = l.trim();
+    return t && !/^;+$/.test(t);
+  });
+  if (!firstLine) return ';';
+  const semicolons = (firstLine.match(/;/g) || []).length;
+  const commas = (firstLine.match(/,/g) || []).length;
+  if (commas > semicolons) return ',';
+  if (semicolons > 0) return ';';
+  return commas > 0 ? ',' : ';';
+}
+
+function isDateLike(v) {
+  if (!v) return false;
+  const s = v.trim();
+  return /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s) || /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function isTypeLike(v) {
+  return /^(CR|DB|DR)$/i.test((v || '').trim());
+}
+
+// Infer column roles from a headerless row (e.g. when user pastes a single
+// mutation line). Assumes a BCA-like layout: date, description, [cbg], amount,
+// [type], [balance].
+function inferColumns(cols) {
+  const col = { date: undefined, description: undefined, type: undefined, amount: undefined, balance: undefined };
+  const numericIdx = [];
+
+  cols.forEach((c, i) => {
+    const v = (c || '').trim();
+    if (col.date === undefined && isDateLike(v)) { col.date = i; return; }
+    if (col.type === undefined && isTypeLike(v)) { col.type = i; return; }
+    if (v !== '' && /[\d.,]/.test(v)) {
+      const num = parseAmount(v);
+      if (!isNaN(num)) {
+        numericIdx.push(i);
+        return;
+      }
+    }
+    if (col.description === undefined) col.description = i;
+  });
+
+  if (numericIdx.length > 0) {
+    col.balance = numericIdx[numericIdx.length - 1];
+    if (col.type !== undefined) {
+      const before = numericIdx.filter(i => i < col.type);
+      col.amount = before.length ? before[before.length - 1] : numericIdx[0];
+    } else {
+      col.amount = numericIdx[0];
+    }
+  }
+
+  if (col.description === undefined) {
+    for (let i = 0; i < cols.length; i++) {
+      if (i !== col.date && i !== col.type && i !== col.amount && i !== col.balance) {
+        col.description = i;
+        break;
+      }
+    }
+  }
+
+  return col;
+}
+
 function parseCSV(csvText) {
   const lines = csvText.split(/\r?\n/);
   const mutations = [];
   let colMap = null;
+  const delimiter = detectDelimiter(csvText);
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || /^;+$/.test(trimmed)) continue;
 
-    const cols = trimmed.split(';');
+    const cols = trimmed.split(delimiter);
 
     if (!colMap) {
       const map = {};
@@ -123,8 +190,14 @@ function parseCSV(csvText) {
       });
       if (map.date !== undefined && map.amount !== undefined) {
         colMap = map;
+        continue;
       }
-      continue;
+      const inferred = inferColumns(cols);
+      if (inferred.date !== undefined && inferred.amount !== undefined) {
+        colMap = inferred;
+      } else {
+        continue;
+      }
     }
 
     const tanggal = cols[colMap.date];
@@ -133,7 +206,7 @@ function parseCSV(csvText) {
     const jenis = colMap.type !== undefined ? cols[colMap.type] : '';
     const saldo = colMap.balance !== undefined ? cols[colMap.balance] : '';
 
-    if (!tanggal || !mutasi || !jenis) continue;
+    if (!tanggal || !mutasi) continue;
 
     const isNonOperational = /^(BIAYA ADM|BUNGA|PAJAK BUNGA|BIF BIAYA TXN|BYR VIA E-BANKING|GS\s+1|GS\s+2|PENERIMAAN NEGARA)/i.test(keterangan)
       || /FTFVA/i.test(keterangan)
@@ -141,8 +214,9 @@ function parseCSV(csvText) {
 
     const amount = parseAmount(mutasi);
     const date = parseDate(tanggal);
+    if (!date) continue;
     const balance = parseBalance(saldo);
-    const type = jenis === 'CR' ? 'credit' : 'debit';
+    const type = jenis ? (jenis.toUpperCase() === 'CR' ? 'credit' : 'debit') : (amount >= 0 ? 'credit' : 'debit');
     const senderName = type === 'credit' ? extractSenderName(keterangan) : null;
 
     mutations.push({

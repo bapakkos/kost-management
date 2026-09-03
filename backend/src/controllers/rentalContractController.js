@@ -98,6 +98,7 @@ exports.update = async (req, res) => {
     // If end_date is set, mark as keluar
     if (end_date) {
       contract.status = 'keluar';
+      contract.prorate_pending = false;
       await contract.save();
     }
 
@@ -145,6 +146,7 @@ exports.remove = async (req, res) => {
     // Set end_date to today
     contract.end_date = new Date().toISOString().slice(0, 10);
     contract.status = 'keluar';
+    contract.prorate_pending = false;
     await contract.save();
 
     const room = await Room.findByPk(contract.room_id);
