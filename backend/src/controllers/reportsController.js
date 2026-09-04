@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const {
   MonthlyBilling, NonMonthlyIncome, PaymentReceipt, BankMutation, ReconciliationLink,
-  RentalContract, Tenant, Room, RoomType, DepositReturn,
+  RentalContract, Tenant, Room, RoomType, DepositReturn, Booking, BookingReturn,
 } = require('../models');
 const { generateInvoicePDF } = require('../utils/pdfGenerator');
 
@@ -104,16 +104,23 @@ exports.getDepositLiability = async (req, res) => {
       where: { category: 'deposit', is_paid: true },
       include: [Tenant, Room],
     });
+    const bookingRows = await NonMonthlyIncome.findAll({
+      where: { category: 'booking', is_paid: true },
+      include: [Tenant, Room],
+    });
     const forfeitedRows = await NonMonthlyIncome.findAll({
       where: { category: 'deposit_hangus', is_paid: true },
       include: [Tenant, Room],
     });
     const returns = await DepositReturn.findAll({ include: [{ model: RentalContract, include: [Tenant, Room] }] });
+    const bookingReturns = await BookingReturn.findAll({ include: [{ model: Booking, include: [Tenant] }] });
 
     const collected = collectedRows.reduce((s, r) => s + parseFloat(r.total_amount), 0);
+    const bookingCollected = bookingRows.reduce((s, r) => s + parseFloat(r.total_amount), 0);
     const forfeited = forfeitedRows.reduce((s, r) => s + parseFloat(r.total_amount), 0);
     const returned = returns.reduce((s, r) => s + parseFloat(r.amount), 0);
-    const active_liability = collected - forfeited - returned;
+    const bookingReturned = bookingReturns.reduce((s, r) => s + parseFloat(r.amount), 0);
+    const active_liability = collected + bookingCollected - forfeited - returned;
 
     const byTenant = {};
     const addRow = (row, bucket) => {
@@ -125,6 +132,7 @@ exports.getDepositLiability = async (req, res) => {
       byTenant[tid][bucket] += parseFloat(row.total_amount || row.amount || 0);
     };
     collectedRows.forEach((r) => addRow(r, 'collected'));
+    bookingRows.forEach((r) => addRow(r, 'collected'));
     forfeitedRows.forEach((r) => addRow(r, 'forfeited'));
     returns.forEach((r) => {
       if (r.RentalContract && r.RentalContract.Tenant) addRow(r.RentalContract, 'returned');
@@ -137,8 +145,10 @@ exports.getDepositLiability = async (req, res) => {
 
     res.json({
       total_collected: collected,
+      total_booking_collected: bookingCollected,
       total_forfeited: forfeited,
       total_returned: returned,
+      total_booking_returned: bookingReturned,
       active_liability,
       breakdown,
     });

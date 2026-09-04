@@ -8,6 +8,7 @@ import PriceSchemes from './pages/PriceSchemes.jsx';
 import Rooms from './pages/Rooms.jsx';
 import Tenants from './pages/Tenants.jsx';
 import Contracts from './pages/Contracts.jsx';
+import Bookings from './pages/Bookings.jsx';
 import Payments from './pages/Payments.jsx';
 import MonthlyBillings from './pages/MonthlyBillings.jsx';
 import NonMonthlyIncomes from './pages/NonMonthlyIncomes.jsx';
@@ -36,6 +37,7 @@ function AppRoutes() {
       <Route path="/rooms" element={<ProtectedRoute><Rooms /></ProtectedRoute>} />
       <Route path="/tenants" element={<ProtectedRoute><Tenants /></ProtectedRoute>} />
       <Route path="/contracts" element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
+      <Route path="/bookings" element={<ProtectedRoute><Bookings /></ProtectedRoute>} />
       <Route path="/payments" element={<ProtectedRoute><Payments /></ProtectedRoute>} />
       <Route path="/monthly-billings" element={<ProtectedRoute><MonthlyBillings /></ProtectedRoute>} />
       <Route path="/non-monthly-incomes" element={<ProtectedRoute><NonMonthlyIncomes /></ProtectedRoute>} />

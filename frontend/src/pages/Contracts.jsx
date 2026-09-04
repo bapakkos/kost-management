@@ -77,8 +77,8 @@ function ContractsTable({ title, icon, contracts, sort, setSort, onEdit, onCheck
                 <td>
                   <span style={{
                     padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                    background: c.deposit_status === 'active' ? '#e6f7ff' : c.deposit_status === 'forfeited' ? '#fff2e8' : '#f6ffed',
-                    color: c.deposit_status === 'active' ? '#1890ff' : c.deposit_status === 'forfeited' ? '#fa8c16' : '#52c41a',
+                    background: c.deposit_status === 'unpaid' ? '#fff1f0' : c.deposit_status === 'paid' ? '#e6f7ff' : c.deposit_status === 'forfeited' ? '#fff2e8' : '#f6ffed',
+                    color: c.deposit_status === 'unpaid' ? '#cf1322' : c.deposit_status === 'paid' ? '#1890ff' : c.deposit_status === 'forfeited' ? '#fa8c16' : '#52c41a',
                   }}>{c.deposit_status}</span>
                 </td>
                 <td>
@@ -86,10 +86,10 @@ function ContractsTable({ title, icon, contracts, sort, setSort, onEdit, onCheck
                   {showCheckOut && (
                     <button className="btn btn-danger btn-sm" style={{ marginLeft: 4 }} onClick={() => onCheckOut(c.id)}>Check Out</button>
                   )}
-                  {c.deposit_status === 'active' && onDepositForfeit && (
+                  {c.deposit_status === 'paid' && onDepositForfeit && (
                     <button className="btn btn-sm" style={{ marginLeft: 4, background: '#fa8c16', color: '#fff' }} onClick={() => onDepositForfeit(c)}>Hangus</button>
                   )}
-                  {c.deposit_status === 'active' && onDepositReturn && (
+                  {c.deposit_status === 'paid' && onDepositReturn && (
                     <button className="btn btn-sm" style={{ marginLeft: 4, background: '#52c41a', color: '#fff' }} onClick={() => onDepositReturn(c)}>Kembali</button>
                   )}
                 </td>
@@ -110,7 +110,7 @@ export default function Contracts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ room_id: '', tenant_id: '', pricing_scheme_id: '', start_date: '', end_date: '', deposit_amount: 1000000, deposit_status: 'active', status: 'sewa' });
+  const [form, setForm] = useState({ room_id: '', tenant_id: '', pricing_scheme_id: '', start_date: '', end_date: '', deposit_amount: 1000000, deposit_status: 'unpaid', status: 'sewa' });
   const [sortSewa, setSortSewa] = useState({ field: 'start_date', dir: 'desc' });
   const [sortBooking, setSortBooking] = useState({ field: 'start_date', dir: 'asc' });
   const [sortKeluar, setSortKeluar] = useState({ field: 'end_date', dir: 'desc' });
@@ -137,7 +137,7 @@ export default function Contracts() {
   useEffect(() => { fetch(); }, []);
 
   const resetForm = () => {
-    setForm({ room_id: '', tenant_id: '', pricing_scheme_id: '', start_date: '', end_date: '', deposit_amount: 1000000, deposit_status: 'active', status: 'sewa' });
+    setForm({ room_id: '', tenant_id: '', pricing_scheme_id: '', start_date: '', end_date: '', deposit_amount: 1000000, deposit_status: 'unpaid', status: 'sewa' });
     setEditing(null);
   };
 
@@ -166,7 +166,7 @@ export default function Contracts() {
       start_date: c.start_date || '',
       end_date: c.end_date || '',
       deposit_amount: c.deposit_amount || 1000000,
-      deposit_status: c.deposit_status || 'active',
+      deposit_status: c.deposit_status || 'unpaid',
       status: c.status || 'sewa',
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -278,7 +278,8 @@ const handleCheckOut = async (id) => {
             <div className="form-group" style={{ flex: 1 }}>
               <label>Deposit Status</label>
               <select value={form.deposit_status} onChange={e => setForm({ ...form, deposit_status: e.target.value })}>
-                <option value="active">Active</option>
+                <option value="unpaid">Unpaid</option>
+                <option value="paid">Paid</option>
                 <option value="forfeited">Forfeited</option>
                 <option value="returned">Returned</option>
               </select>

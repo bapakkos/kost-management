@@ -2,7 +2,7 @@ const sequelize = require('../config/database');
 const { Op } = require('sequelize');
 const {
   PaymentReceipt, PaymentReceiptItem, BankMutation, ReconciliationLink,
-  MonthlyBilling, NonMonthlyIncome, RentalContract, Tenant, Room,
+  MonthlyBilling, NonMonthlyIncome, RentalContract, Tenant, Room, Booking,
 } = require('../models');
 const { calculateDiscount } = require('../utils/discountCalculator');
 
@@ -146,6 +146,19 @@ exports.reconcile = async (req, res) => {
       inc.is_paid = true;
       inc.paid_date = paymentDate;
       await inc.save({ transaction: t });
+
+      if (inc.category === 'deposit' && inc.rental_contract_id) {
+        const dc = await RentalContract.findByPk(inc.rental_contract_id, { transaction: t });
+        if (dc && dc.deposit_status === 'unpaid') {
+          await dc.update({ deposit_status: 'paid' }, { transaction: t });
+        }
+      }
+      if (inc.category === 'booking' && inc.id) {
+        const booking = await Booking.findOne({ where: { non_monthly_income_id: inc.id }, transaction: t });
+        if (booking && booking.status === 'pending') {
+          await booking.update({ status: 'received' }, { transaction: t });
+        }
+      }
     }
 
     for (const m of mutations) {
@@ -191,15 +204,28 @@ exports.undo = async (req, res) => {
       return res.status(400).json({ error: 'Some mutations not found or not reconciled' });
     }
 
-    const links = await ReconciliationLink.findAll({
-      where: { bank_mutation_id: { [Op.in]: mutation_ids }, target_type: 'nota' },
+    const allLinks = await ReconciliationLink.findAll({
+      where: { bank_mutation_id: { [Op.in]: mutation_ids } },
       transaction: t,
     });
-    if (links.length === 0) {
+    if (allLinks.length === 0) {
       await t.rollback();
       return res.status(400).json({ error: 'No reconciliation links found for these mutations' });
     }
 
+    const types = new Set(allLinks.map(l => l.target_type));
+
+    if (types.has('deposit_return')) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Mutasi ini ter-link ke deposit return; undo deposit tidak didukung di sini.' });
+    }
+
+    if (types.has('booking_return')) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Mutasi ini ter-link ke booking return; undo tidak didukung di sini.' });
+    }
+
+    const links = allLinks.filter(l => l.target_type === 'nota');
     const receiptIds = [...new Set(links.map(l => l.target_id))];
 
     const allLinksForReceipts = await ReconciliationLink.findAll({
@@ -219,15 +245,6 @@ exports.undo = async (req, res) => {
           error: `Nota #${receiptId} ter-link ke mutasi lain (id: ${notIncluded.join(', ')}). Undo harus mencakup semua mutasi yang ter-link ke nota ini.`,
         });
       }
-    }
-
-    const depositLinks = await ReconciliationLink.findAll({
-      where: { bank_mutation_id: { [Op.in]: mutation_ids }, target_type: 'deposit_return' },
-      transaction: t,
-    });
-    if (depositLinks.length > 0) {
-      await t.rollback();
-      return res.status(400).json({ error: 'Mutasi ini ter-link ke deposit return; undo deposit tidak didukung di sini.' });
     }
 
     let receiptsDeleted = 0;
@@ -266,6 +283,18 @@ exports.undo = async (req, res) => {
             income.is_paid = false;
             income.paid_date = null;
             await income.save({ transaction: t });
+            if (income.category === 'deposit' && income.rental_contract_id) {
+              const dc = await RentalContract.findByPk(income.rental_contract_id, { transaction: t });
+              if (dc && dc.deposit_status === 'paid') {
+                await dc.update({ deposit_status: 'unpaid' }, { transaction: t });
+              }
+            }
+            if (income.category === 'booking') {
+              const booking = await Booking.findOne({ where: { non_monthly_income_id: income.id }, transaction: t });
+              if (booking && booking.status === 'received') {
+                await booking.update({ status: 'pending' }, { transaction: t });
+              }
+            }
           }
         }
       }

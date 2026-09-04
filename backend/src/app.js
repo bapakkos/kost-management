@@ -26,6 +26,7 @@ app.use('/api/bank-mutations', require('./routes/bankMutations'));
 app.use('/api/reconcile', require('./routes/reconciliation'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/sender-registry', require('./routes/senderRegistry'));
+app.use('/api/bookings', require('./routes/bookings'));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

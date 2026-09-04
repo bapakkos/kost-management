@@ -785,7 +785,9 @@ export default function BankReconciliation() {
                           ? m.reconciliation.receipt_no
                           : m.reconciliation?.type === 'deposit_return'
                             ? '(deposit return)'
-                            : '-'}
+                            : m.reconciliation?.type === 'booking_return'
+                              ? '(booking return)'
+                              : '-'}
                       </td>
                     )}
                     {showReconciled && (

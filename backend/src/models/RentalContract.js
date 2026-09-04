@@ -9,7 +9,7 @@ const RentalContract = sequelize.define('RentalContract', {
   start_date: { type: DataTypes.DATEONLY, allowNull: false },
   end_date: { type: DataTypes.DATEONLY },
   deposit_amount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 1000000 },
-  deposit_status: { type: DataTypes.ENUM('active', 'forfeited', 'returned'), defaultValue: 'active' },
+  deposit_status: { type: DataTypes.ENUM('unpaid', 'paid', 'forfeited', 'returned'), defaultValue: 'unpaid' },
   status: { type: DataTypes.ENUM('booking', 'sewa', 'keluar') },
   prorate_pending: { type: DataTypes.BOOLEAN, defaultValue: false },
   prepaid_months: { type: DataTypes.INTEGER, defaultValue: 1 },

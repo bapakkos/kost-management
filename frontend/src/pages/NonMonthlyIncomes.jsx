@@ -13,6 +13,7 @@ const CATEGORIES = [
   { value: 'sewa_harian', label: 'Sewa Harian' },
   { value: 'deposit', label: 'Deposit' },
   { value: 'deposit_hangus', label: 'Deposit Hangus' },
+  { value: 'booking', label: 'Booking' },
   { value: 'lainnya', label: 'Lainnya' },
 ];
 
@@ -20,24 +21,27 @@ export default function NonMonthlyIncomes() {
   const [incomes, setIncomes] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
-    tenant_id: '', room_id: '', category: 'lainnya', description: '',
+    tenant_id: '', room_id: '', rental_contract_id: '', category: 'lainnya', description: '',
     transaction_date: new Date().toISOString().slice(0, 10), unit_price: '', quantity: 1,
   });
   const [editing, setEditing] = useState(null);
 
   const fetch = async () => {
     try {
-      const [iRes, tRes, rRes] = await Promise.all([
+      const [iRes, tRes, rRes, cRes] = await Promise.all([
         api.get('/non-monthly-incomes'),
         api.get('/tenants'),
         api.get('/rooms'),
+        api.get('/contracts'),
       ]);
       setIncomes(iRes.data);
       setTenants(tRes.data);
       setRooms(rRes.data);
+      setContracts(cRes.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load');
     } finally {
@@ -49,7 +53,7 @@ export default function NonMonthlyIncomes() {
 
   const resetForm = () => {
     setForm({
-      tenant_id: '', room_id: '', category: 'lainnya', description: '',
+      tenant_id: '', room_id: '', rental_contract_id: '', category: 'lainnya', description: '',
       transaction_date: new Date().toISOString().slice(0, 10), unit_price: '', quantity: 1,
     });
     setEditing(null);
@@ -58,11 +62,15 @@ export default function NonMonthlyIncomes() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const payload = { ...form };
+    if (payload.category !== 'deposit' && payload.category !== 'deposit_hangus') {
+      payload.rental_contract_id = '';
+    }
     try {
       if (editing) {
-        await api.put(`/non-monthly-incomes/${editing}`, form);
+        await api.put(`/non-monthly-incomes/${editing}`, payload);
       } else {
-        await api.post('/non-monthly-incomes', form);
+        await api.post('/non-monthly-incomes', payload);
       }
       resetForm();
       fetch();
@@ -74,7 +82,8 @@ export default function NonMonthlyIncomes() {
   const handleEdit = (inc) => {
     setEditing(inc.id);
     setForm({
-      tenant_id: inc.tenant_id || '', room_id: inc.room_id || '', category: inc.category,
+      tenant_id: inc.tenant_id || '', room_id: inc.room_id || '', rental_contract_id: inc.rental_contract_id || '',
+      category: inc.category,
       description: inc.description || '', transaction_date: inc.transaction_date?.slice(0, 10) || '',
       unit_price: inc.unit_price, quantity: inc.quantity,
     });
@@ -125,6 +134,21 @@ export default function NonMonthlyIncomes() {
             </select>
           </div>
         </div>
+        {(form.category === 'deposit' || form.category === 'deposit_hangus') && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label>Kontrak Terkait</label>
+              <select value={form.rental_contract_id} onChange={e => setForm({ ...form, rental_contract_id: e.target.value })}>
+                <option value="">-- Tidak ter-link --</option>
+                {contracts.map(c => (
+                  <option key={c.id} value={c.id}>
+                    #{c.id} · {c.Tenant?.nama_panggilan || c.Tenant?.name || '-'} · {c.Room?.room_number || '-'} · {formatRp(c.deposit_amount)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Description</label>
@@ -177,7 +201,7 @@ export default function NonMonthlyIncomes() {
               <td>{inc.description || '-'}</td>
               <td><strong>{formatRp(inc.total_amount)}</strong></td>
               <td>
-                {inc.category === 'deposit'
+                {inc.category === 'deposit' || inc.category === 'booking'
                   ? <span style={{ color: '#1890ff', fontWeight: 600 }}>Non-Revenue</span>
                   : inc.is_revenue
                     ? <span style={{ color: '#52c41a' }}>Ya</span>

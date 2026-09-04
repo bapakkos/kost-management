@@ -14,6 +14,8 @@ const BankMutation = require('./BankMutation');
 const ReconciliationLink = require('./ReconciliationLink');
 const DepositReturn = require('./DepositReturn');
 const SenderRegistry = require('./SenderRegistry');
+const Booking = require('./Booking');
+const BookingReturn = require('./BookingReturn');
 
 // --- Room Type ↔ Pricing Scheme Rates ---
 RoomType.hasMany(PricingSchemeRate, { foreignKey: 'room_type_id' });
@@ -95,6 +97,23 @@ DepositReturn.belongsTo(User, { foreignKey: 'created_by' });
 Tenant.hasMany(SenderRegistry, { foreignKey: 'tenant_id' });
 SenderRegistry.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 
+// --- Bookings (room-less reservations) ---
+Tenant.hasMany(Booking, { foreignKey: 'tenant_id' });
+Booking.belongsTo(Tenant, { foreignKey: 'tenant_id' });
+
+Booking.belongsTo(NonMonthlyIncome, { foreignKey: 'non_monthly_income_id' });
+NonMonthlyIncome.hasMany(Booking, { foreignKey: 'non_monthly_income_id' });
+
+Booking.belongsTo(RentalContract, { foreignKey: 'contract_id' });
+RentalContract.hasMany(Booking, { foreignKey: 'contract_id' });
+
+// --- Booking Returns ---
+Booking.hasMany(BookingReturn, { foreignKey: 'booking_id' });
+BookingReturn.belongsTo(Booking, { foreignKey: 'booking_id' });
+
+User.hasMany(BookingReturn, { foreignKey: 'created_by' });
+BookingReturn.belongsTo(User, { foreignKey: 'created_by' });
+
 module.exports = {
   User,
   RoomType,
@@ -112,4 +131,6 @@ module.exports = {
   ReconciliationLink,
   DepositReturn,
   SenderRegistry,
+  Booking,
+  BookingReturn,
 };

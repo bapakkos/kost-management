@@ -32,6 +32,9 @@ export default function Layout({ children }) {
         <NavLink to="/contracts" className={({ isActive }) => isActive ? 'active' : ''}>
           📝 Contracts
         </NavLink>
+        <NavLink to="/bookings" className={({ isActive }) => isActive ? 'active' : ''}>
+          📅 Booking
+        </NavLink>
         <NavLink to="/payments" className={({ isActive }) => isActive ? 'active' : ''}>
           🧾 Nota
         </NavLink>

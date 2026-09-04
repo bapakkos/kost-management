@@ -46,6 +46,7 @@ exports.getAll = async (req, res) => {
             linkByMutation.set(l.bank_mutation_id, receiptById.get(l.target_id) || null);
           }
         }
+
         for (const m of mutations) {
           const receipt = linkByMutation.get(m.id);
           if (receipt) {
@@ -57,8 +58,15 @@ exports.getAll = async (req, res) => {
                 : null,
             };
           } else {
-            const hasDeposit = links.some(l => l.bank_mutation_id === m.id && l.target_type === 'deposit_return');
-            m.dataValues.reconciliation = hasDeposit ? { type: 'deposit_return' } : null;
+            const hasDepositReturn = links.some(l => l.bank_mutation_id === m.id && l.target_type === 'deposit_return');
+            const hasBookingReturn = links.some(l => l.bank_mutation_id === m.id && l.target_type === 'booking_return');
+            if (hasDepositReturn) {
+              m.dataValues.reconciliation = { type: 'deposit_return' };
+            } else if (hasBookingReturn) {
+              m.dataValues.reconciliation = { type: 'booking_return' };
+            } else {
+              m.dataValues.reconciliation = null;
+            }
           }
         }
       }

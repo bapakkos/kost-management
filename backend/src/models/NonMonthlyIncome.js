@@ -6,7 +6,7 @@ const NonMonthlyIncome = sequelize.define('NonMonthlyIncome', {
   tenant_id: { type: DataTypes.INTEGER, allowNull: false },
   room_id: { type: DataTypes.INTEGER },
   rental_contract_id: { type: DataTypes.INTEGER },
-  category: { type: DataTypes.ENUM('listrik', 'air', 'parkir', 'tv', 'internet', 'denda', 'sewa_harian', 'deposit', 'deposit_hangus', 'lainnya'), allowNull: false },
+  category: { type: DataTypes.ENUM('listrik', 'air', 'parkir', 'tv', 'internet', 'denda', 'sewa_harian', 'deposit', 'deposit_hangus', 'booking', 'lainnya'), allowNull: false },
   description: { type: DataTypes.STRING(255) },
   unit_price: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   quantity: { type: DataTypes.INTEGER, allowNull: false },

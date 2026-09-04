@@ -146,12 +146,20 @@ export default function Reports() {
             <div style={{ fontSize: 20, fontWeight: 700, color: '#1890ff' }}>{formatRp(deposits?.total_collected || 0)}</div>
           </div>
           <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Booking Diterima</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#13c2c2' }}>{formatRp(deposits?.total_booking_collected || 0)}</div>
+          </div>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
             <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Hangus</h4>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#fa8c16' }}>{formatRp(deposits?.total_forfeited || 0)}</div>
           </div>
           <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
             <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Dikembalikan</h4>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#722ed1' }}>{formatRp(deposits?.total_returned || 0)}</div>
+          </div>
+          <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
+            <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Booking Direfund</h4>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#eb2f96' }}>{formatRp(deposits?.total_booking_returned || 0)}</div>
           </div>
           <div style={{ flex: '1 1 160px', textAlign: 'center' }}>
             <h4 style={{ color: '#888', fontSize: 13, marginBottom: 8 }}>Liabilitas Aktif</h4>
@@ -191,6 +199,7 @@ export default function Reports() {
         <ul style={{ fontSize: 13, color: '#666', paddingLeft: 20 }}>
           <li>Deposit bills (<code>is_revenue=false</code>) are excluded from revenue calculations.</li>
           <li>Deposit hangus (<code>deposit_hangus</code>) is included in non-monthly income revenue.</li>
+          <li>Booking payments (<code>booking</code>) count toward active liability until converted to a contract deposit or refunded.</li>
         </ul>
       </div>
     </div>

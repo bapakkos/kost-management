@@ -6,7 +6,7 @@ const PaymentReceipt = sequelize.define('PaymentReceipt', {
   receipt_no: { type: DataTypes.STRING(30), allowNull: false },
   payment_date: { type: DataTypes.DATEONLY, allowNull: false },
   tenant_id: { type: DataTypes.INTEGER, allowNull: false },
-  room_id: { type: DataTypes.INTEGER, allowNull: false },
+  room_id: { type: DataTypes.INTEGER },
   total_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
   discount_amount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   selisih_amount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
