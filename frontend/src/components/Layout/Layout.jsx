@@ -48,6 +48,9 @@ export default function Layout({ children }) {
         <NavLink to="/bank-reconciliation" className={({ isActive }) => isActive ? 'active' : ''}>
           🏦 Rekonsiliasi
         </NavLink>
+        <NavLink to="/mutation-report" className={({ isActive }) => isActive ? 'active' : ''}>
+          📒 Mutasi Rekening
+        </NavLink>
         <NavLink to="/reports" className={({ isActive }) => isActive ? 'active' : ''}>
           📈 Laporan
         </NavLink>

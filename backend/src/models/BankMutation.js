@@ -13,6 +13,8 @@ const BankMutation = sequelize.define('BankMutation', {
   tenant_id: { type: DataTypes.INTEGER },
   is_reconciled: { type: DataTypes.BOOLEAN, defaultValue: false },
   category: { type: DataTypes.ENUM('operational', 'non_operational'), defaultValue: 'operational' },
+  keterangan: { type: DataTypes.TEXT, allowNull: true },
+  keterangan_auto: { type: DataTypes.TEXT, allowNull: true },
 }, { tableName: 'bank_mutations', timestamps: true, underscored: true, updatedAt: false });
 
 module.exports = BankMutation;

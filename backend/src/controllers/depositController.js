@@ -1,4 +1,5 @@
 const { RentalContract, DepositReturn, NonMonthlyIncome, ReconciliationLink, BankMutation, Tenant, Room } = require('../models');
+const { buildDepositReturnKeterangan } = require('../utils/keteranganAuto');
 
 exports.depositReturn = async (req, res) => {
   try {
@@ -17,6 +18,7 @@ exports.depositReturn = async (req, res) => {
     });
 
     if (mutation_ids && mutation_ids.length > 0) {
+      const keteranganAuto = buildDepositReturnKeterangan(contract.Tenant, contract.Room?.room_number);
       for (const mid of mutation_ids) {
         await ReconciliationLink.create({
           bank_mutation_id: mid,
@@ -26,6 +28,7 @@ exports.depositReturn = async (req, res) => {
         const mutation = await BankMutation.findByPk(mid);
         if (mutation) {
           mutation.is_reconciled = true;
+          mutation.keterangan_auto = keteranganAuto;
           await mutation.save();
         }
       }

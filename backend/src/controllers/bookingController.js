@@ -3,6 +3,7 @@ const {
   Booking, BookingReturn, NonMonthlyIncome, RentalContract, Room, RoomType, Tenant,
   BankMutation, ReconciliationLink,
 } = require('../models');
+const { buildBookingRefundKeterangan } = require('../utils/keteranganAuto');
 
 exports.getAll = async (req, res) => {
   try {
@@ -182,6 +183,8 @@ exports.refund = async (req, res) => {
     }, { transaction: t });
 
     if (mutation_ids && mutation_ids.length > 0) {
+      const tenant = await Tenant.findByPk(booking.tenant_id, { transaction: t });
+      const keteranganAuto = buildBookingRefundKeterangan(tenant);
       for (const mid of mutation_ids) {
         const mutation = await BankMutation.findByPk(mid, { transaction: t });
         if (!mutation || mutation.is_reconciled) {
@@ -194,6 +197,7 @@ exports.refund = async (req, res) => {
           target_id: bookingReturn.id,
         }, { transaction: t });
         mutation.is_reconciled = true;
+        mutation.keterangan_auto = keteranganAuto;
         await mutation.save({ transaction: t });
       }
     }

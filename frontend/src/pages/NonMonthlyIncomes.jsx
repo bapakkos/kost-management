@@ -17,6 +17,15 @@ const CATEGORIES = [
   { value: 'lainnya', label: 'Lainnya' },
 ];
 
+const DEFAULT_PRICES = {
+  sewa_harian: 180000,
+  tv: 200000,
+  parkir: 300000,
+};
+
+const isDepositCategory = (category) => category === 'deposit' || category === 'deposit_hangus';
+const isActiveContract = (c) => c.status === 'booking' || c.status === 'sewa';
+
 export default function NonMonthlyIncomes() {
   const [incomes, setIncomes] = useState([]);
   const [tenants, setTenants] = useState([]);
@@ -41,7 +50,9 @@ export default function NonMonthlyIncomes() {
       setIncomes(iRes.data);
       setTenants(tRes.data);
       setRooms(rRes.data);
-      setContracts(cRes.data);
+      setContracts(
+        [...cRes.data].sort((a, b) => (isActiveContract(a) ? 0 : 1) - (isActiveContract(b) ? 0 : 1))
+      );
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load');
     } finally {
@@ -59,13 +70,71 @@ export default function NonMonthlyIncomes() {
     setEditing(null);
   };
 
+  const findActiveContractByTenant = (tenantId) =>
+    contracts.find((c) => String(c.tenant_id) === String(tenantId) && isActiveContract(c));
+
+  const handleTenantChange = (tenantId) => {
+    setForm((prev) => {
+      const next = { ...prev, tenant_id: tenantId };
+      const activeContract = findActiveContractByTenant(tenantId);
+      next.room_id = activeContract ? String(activeContract.room_id) : '';
+      if (next.rental_contract_id) {
+        const linked = contracts.find((c) => String(c.id) === String(next.rental_contract_id));
+        if (!linked || String(linked.tenant_id) !== String(tenantId)) {
+          next.rental_contract_id = '';
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleCategoryChange = (category) => {
+    setForm((prev) => {
+      const next = { ...prev, category };
+      if (DEFAULT_PRICES[category] !== undefined) {
+        next.unit_price = DEFAULT_PRICES[category];
+      }
+      if (isDepositCategory(category)) {
+        if (!next.rental_contract_id && next.tenant_id) {
+          const activeContract = findActiveContractByTenant(next.tenant_id);
+          if (activeContract) {
+            next.rental_contract_id = String(activeContract.id);
+            next.unit_price = activeContract.deposit_amount ?? '';
+          }
+        }
+      } else {
+        next.rental_contract_id = '';
+      }
+      return next;
+    });
+  };
+
+  const handleContractChange = (contractId) => {
+    setForm((prev) => {
+      const next = { ...prev, rental_contract_id: contractId };
+      if (contractId) {
+        const contract = contracts.find((c) => String(c.id) === String(contractId));
+        if (contract) {
+          next.tenant_id = String(contract.tenant_id);
+          next.room_id = String(contract.room_id);
+          if (isDepositCategory(prev.category)) {
+            next.unit_price = contract.deposit_amount ?? '';
+          }
+        }
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     const payload = { ...form };
-    if (payload.category !== 'deposit' && payload.category !== 'deposit_hangus') {
-      payload.rental_contract_id = '';
+    if (!isDepositCategory(payload.category)) {
+      payload.rental_contract_id = null;
     }
+    payload.room_id = payload.room_id || null;
+    payload.rental_contract_id = payload.rental_contract_id || null;
     try {
       if (editing) {
         await api.put(`/non-monthly-incomes/${editing}`, payload);
@@ -115,21 +184,21 @@ export default function NonMonthlyIncomes() {
         <div style={{ display: 'flex', gap: 8 }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Tenant</label>
-            <select value={form.tenant_id} onChange={e => setForm({ ...form, tenant_id: e.target.value })} required>
+            <select value={form.tenant_id} onChange={e => handleTenantChange(e.target.value)} required>
               <option value="">-- Select --</option>
               {tenants.map(t => <option key={t.id} value={t.id}>{t.nama_panggilan || t.name}</option>)}
             </select>
           </div>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Room</label>
-            <select value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })} required>
-              <option value="">-- Select --</option>
+            <select value={form.room_id} onChange={e => setForm({ ...form, room_id: e.target.value })}>
+              <option value="">-- Non kamar / tidak spesifik --</option>
               {rooms.map(r => <option key={r.id} value={r.id}>{r.room_number}</option>)}
             </select>
           </div>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Category</label>
-            <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+            <select value={form.category} onChange={e => handleCategoryChange(e.target.value)}>
               {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
@@ -138,11 +207,11 @@ export default function NonMonthlyIncomes() {
           <div style={{ display: 'flex', gap: 8 }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label>Kontrak Terkait</label>
-              <select value={form.rental_contract_id} onChange={e => setForm({ ...form, rental_contract_id: e.target.value })}>
+              <select value={form.rental_contract_id} onChange={e => handleContractChange(e.target.value)}>
                 <option value="">-- Tidak ter-link --</option>
                 {contracts.map(c => (
                   <option key={c.id} value={c.id}>
-                    #{c.id} · {c.Tenant?.nama_panggilan || c.Tenant?.name || '-'} · {c.Room?.room_number || '-'} · {formatRp(c.deposit_amount)}
+                    #{c.id} · {c.Tenant?.nama_panggilan || c.Tenant?.name || '-'} · {c.Room?.room_number || '-'} · {formatRp(c.deposit_amount)}{isActiveContract(c) ? '' : ' · keluar'}
                   </option>
                 ))}
               </select>

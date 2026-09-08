@@ -5,6 +5,7 @@ const {
   MonthlyBilling, NonMonthlyIncome, RentalContract, Tenant, Room, Booking,
 } = require('../models');
 const { calculateDiscount } = require('../utils/discountCalculator');
+const { buildNotaKeterangan } = require('../utils/keteranganAuto');
 
 exports.reconcile = async (req, res) => {
   const t = await sequelize.transaction();
@@ -103,6 +104,12 @@ exports.reconcile = async (req, res) => {
 
     const tenantId = billings[0]?.RentalContract?.tenant_id || incomes[0]?.tenant_id;
     const roomId = billings[0]?.RentalContract?.room_id || incomes[0]?.room_id;
+    const keteranganAuto = buildNotaKeterangan({
+      billings,
+      incomes,
+      tenant: billings[0]?.RentalContract?.Tenant || incomes[0]?.Tenant,
+      roomNumber: billings[0]?.RentalContract?.Room?.room_number || incomes[0]?.Room?.room_number,
+    });
 
     const lastReceipt = await PaymentReceipt.findOne({
       order: [['id', 'DESC']],
@@ -168,6 +175,7 @@ exports.reconcile = async (req, res) => {
         target_id: receipt.id,
       }, { transaction: t });
       m.is_reconciled = true;
+      m.keterangan_auto = keteranganAuto;
       await m.save({ transaction: t });
     }
 
@@ -307,6 +315,7 @@ exports.undo = async (req, res) => {
 
     for (const m of mutations) {
       m.is_reconciled = false;
+      m.keterangan_auto = null;
       await m.save({ transaction: t });
     }
 

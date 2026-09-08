@@ -54,15 +54,46 @@ function extractSenderName(description) {
   return null;
 }
 
+// Split a single CSV line into fields, respecting double-quoted fields
+// (quotes may wrap fields that contain the delimiter, e.g. "2,600,000.00").
+function splitCSVLine(line, delimiter) {
+  const cols = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === delimiter && !inQuotes) {
+      cols.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cols.push(cur);
+  return cols.map(c => c.trim());
+}
+
 function parseAmount(raw) {
   if (!raw) return 0;
-  raw = String(raw).trim();
+  raw = String(raw).trim().replace(/^"|"$/g, '');
   if (raw === '') return 0;
 
   // Indonesian format: groups of 3 digits separated by dots, optional comma decimal
   // e.g. "16.000.000" / "57.294" / "2.500" / "1.234,50"
   if (/^-?\d{1,3}(\.\d{3})*(,\d+)?$/.test(raw)) {
     return parseFloat(raw.replace(/\./g, '').replace(',', '.'));
+  }
+  // US format: groups of 3 digits separated by commas, optional dot decimal
+  // e.g. "2,600,000.00" / "45,047.01" / "180,000"
+  if (/^-?\d{1,3}(,\d{3})*(\.\d+)?$/.test(raw)) {
+    return parseFloat(raw.replace(/,/g, ''));
   }
   // English decimal with up to 2 digits after dot = cents, e.g. "16000000.00"
   if (/^-?\d+\.\d{1,2}$/.test(raw)) {
@@ -72,8 +103,12 @@ function parseAmount(raw) {
   if (/^-?\d+$/.test(raw)) {
     return parseFloat(raw);
   }
-  // Fallback: strip thousand dots, convert comma decimal
-  const stripped = raw.replace(/\./g, '').replace(',', '.');
+  // Fallback: decide decimal separator by which comes last
+  const stripped = raw.includes('.') && raw.includes(',')
+    ? (raw.lastIndexOf(',') > raw.lastIndexOf('.')
+      ? raw.replace(/\./g, '').replace(/,/g, '.')
+      : raw.replace(/,/g, ''))
+    : raw.replace(/,/g, '.');
   return parseFloat(stripped);
 }
 
@@ -180,7 +215,7 @@ function parseCSV(csvText) {
     const trimmed = line.trim();
     if (!trimmed || /^;+$/.test(trimmed)) continue;
 
-    const cols = trimmed.split(delimiter);
+    const cols = splitCSVLine(trimmed, delimiter);
 
     if (!colMap) {
       const map = {};
@@ -208,9 +243,8 @@ function parseCSV(csvText) {
 
     if (!tanggal || !mutasi) continue;
 
-    const isNonOperational = /^(BIAYA ADM|BUNGA|PAJAK BUNGA|BIF BIAYA TXN|BYR VIA E-BANKING|GS\s+1|GS\s+2|PENERIMAAN NEGARA)/i.test(keterangan)
-      || /FTFVA/i.test(keterangan)
-      || /ASURANSI/i.test(keterangan);
+    const isNonOperational = /^(BIAYA ADM|BUNGA|PAJAK BUNGA|BYR VIA E-BANKING|GS\s+1|GS\s+2|PENERIMAAN NEGARA)/i.test(keterangan)
+      || /BIF BIAYA TXN|FTFVA|ASURANSI/i.test(keterangan);
 
     const amount = parseAmount(mutasi);
     const date = parseDate(tanggal);

@@ -28,6 +28,8 @@ exports.create = async (req, res) => {
     const { unit_price, quantity } = req.body;
     const total_amount = (parseFloat(unit_price) || 0) * (parseInt(quantity) || 0);
     const body = { ...req.body, total_amount };
+    body.room_id = body.room_id || null;
+    body.rental_contract_id = body.rental_contract_id || null;
     if (body.category === 'deposit' || body.category === 'booking') body.is_revenue = false;
     const income = await NonMonthlyIncome.create(body);
     res.status(201).json(income);
@@ -41,6 +43,8 @@ exports.update = async (req, res) => {
     const income = await NonMonthlyIncome.findByPk(req.params.id);
     if (!income) return res.status(404).json({ error: 'Not found' });
     const updated = { ...req.body };
+    if ('room_id' in updated) updated.room_id = updated.room_id || null;
+    if ('rental_contract_id' in updated) updated.rental_contract_id = updated.rental_contract_id || null;
     if (req.body.unit_price && req.body.quantity) {
       updated.total_amount = parseFloat(req.body.unit_price) * parseInt(req.body.quantity);
     }

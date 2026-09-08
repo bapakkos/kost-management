@@ -34,6 +34,8 @@ app.get('/api/health', (req, res) => {
 
 sequelize.query('PRAGMA foreign_keys = ON')
   .then(() => sequelize.query('ALTER TABLE rental_contracts ADD COLUMN prepaid_months INTEGER NOT NULL DEFAULT 1').catch(() => {}))
+  .then(() => sequelize.query('ALTER TABLE bank_mutations ADD COLUMN keterangan TEXT').catch(() => {}))
+  .then(() => sequelize.query('ALTER TABLE bank_mutations ADD COLUMN keterangan_auto TEXT').catch(() => {}))
   .then(() => sequelize.sync({ force: false })).then(() => {
   console.log('Database synced');
   app.listen(PORT, () => {

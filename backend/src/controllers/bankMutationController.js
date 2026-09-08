@@ -2,9 +2,10 @@ const { Op } = require('sequelize');
 const sequelize = require('../config/database');
 const { parseCSV } = require('../utils/csvParser');
 const { calculateDiscount } = require('../utils/discountCalculator');
+const { buildNotaKeterangan } = require('../utils/keteranganAuto');
 const {
   BankMutation, Tenant, TenantBankAccount, SenderRegistry,
-  RentalContract, MonthlyBilling, NonMonthlyIncome,
+  RentalContract, Room, MonthlyBilling, NonMonthlyIncome,
   PaymentReceipt, PaymentReceiptItem, ReconciliationLink,
 } = require('../models');
 
@@ -277,6 +278,7 @@ async function reconcileOne(mutation, userId) {
 
     const registry = await SenderRegistry.findOne({
       where: { sender_name: mutation.sender_name },
+      include: [Tenant],
       transaction: t,
     });
     if (!registry || !registry.tenant_id) {
@@ -287,7 +289,7 @@ async function reconcileOne(mutation, userId) {
 
     const billings = await MonthlyBilling.findAll({
       where: { is_paid: false },
-      include: [{ model: RentalContract, where: { tenant_id: tenantId } }],
+      include: [{ model: RentalContract, where: { tenant_id: tenantId }, include: [Room] }],
       order: [['period_year', 'ASC'], ['period_month', 'ASC']],
       transaction: t,
     });
@@ -362,6 +364,17 @@ async function reconcileOne(mutation, userId) {
       target_id: receipt.id,
     }, { transaction: t });
     mutation.is_reconciled = true;
+    let roomNumber = contract?.Room?.room_number || null;
+    if (!roomNumber && match.incomes[0]?.room_id) {
+      const room = await Room.findByPk(match.incomes[0].room_id, { transaction: t });
+      roomNumber = room?.room_number || null;
+    }
+    mutation.keterangan_auto = buildNotaKeterangan({
+      billings: match.billings,
+      incomes: match.incomes,
+      tenant: registry.Tenant,
+      roomNumber,
+    });
     await mutation.save({ transaction: t });
 
     await t.commit();
@@ -406,6 +419,64 @@ exports.autoReconcile = async (req, res) => {
     }
 
     res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateKeterangan = async (req, res) => {
+  try {
+    const mutation = await BankMutation.findByPk(req.params.id);
+    if (!mutation) return res.status(404).json({ error: 'Not found' });
+    const keterangan = typeof req.body.keterangan === 'string' ? req.body.keterangan.trim() : '';
+    if (!keterangan) return res.status(400).json({ error: 'keterangan wajib diisi' });
+    await mutation.update({ keterangan });
+    res.json(mutation);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getReport = async (req, res) => {
+  try {
+    const { start_date, end_date, type, status } = req.query;
+    const where = {};
+    if (start_date && end_date) {
+      where.date = { [Op.between]: [start_date, end_date] };
+    } else if (start_date) {
+      where.date = { [Op.gte]: start_date };
+    } else if (end_date) {
+      where.date = { [Op.lte]: end_date };
+    }
+    if (type === 'credit' || type === 'debit') where.type = type;
+
+    let mutations = await BankMutation.findAll({
+      where,
+      include: [Tenant],
+      order: [['date', 'ASC'], ['id', 'ASC']],
+    });
+
+    const hasKeterangan = (m) => Boolean(m.keterangan && m.keterangan.trim()) || Boolean(m.keterangan_auto && m.keterangan_auto.trim());
+    if (status === 'perlu_dicek') mutations = mutations.filter(m => !hasKeterangan(m));
+    else if (status === 'sudah') mutations = mutations.filter(hasKeterangan);
+
+    const totalMasuk = mutations
+      .filter(m => m.type === 'credit')
+      .reduce((s, m) => s + parseFloat(m.amount), 0);
+    const totalKeluar = mutations
+      .filter(m => m.type === 'debit')
+      .reduce((s, m) => s + parseFloat(m.amount), 0);
+
+    res.json({
+      mutations,
+      summary: {
+        total_masuk: totalMasuk,
+        total_keluar: totalKeluar,
+        net: totalMasuk - totalKeluar,
+        count: mutations.length,
+        perlu_dicek: mutations.filter(m => !hasKeterangan(m)).length,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

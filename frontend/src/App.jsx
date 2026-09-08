@@ -13,6 +13,7 @@ import Payments from './pages/Payments.jsx';
 import MonthlyBillings from './pages/MonthlyBillings.jsx';
 import NonMonthlyIncomes from './pages/NonMonthlyIncomes.jsx';
 import BankReconciliation from './pages/BankReconciliation.jsx';
+import MutationReport from './pages/MutationReport.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 import './App.css';
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/monthly-billings" element={<ProtectedRoute><MonthlyBillings /></ProtectedRoute>} />
       <Route path="/non-monthly-incomes" element={<ProtectedRoute><NonMonthlyIncomes /></ProtectedRoute>} />
       <Route path="/bank-reconciliation" element={<ProtectedRoute><BankReconciliation /></ProtectedRoute>} />
+      <Route path="/mutation-report" element={<ProtectedRoute><MutationReport /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
     </Routes>
