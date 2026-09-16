@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../services/api';
 
 const formatRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -29,9 +29,82 @@ export default function MutationReport() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState({ start_date: '', end_date: '', type: 'all', status: 'all' });
+  const [sort, setSort] = useState({ key: 'date', dir: 'desc' });
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const statusRank = (m) => (m.keterangan ? 3 : m.keterangan_auto ? 2 : 1);
+
+  const sortedMutations = useMemo(() => {
+    const arr = [...mutations];
+    const { key, dir } = sort;
+    const mult = dir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      let av, bv;
+      switch (key) {
+        case 'date':
+          av = new Date(a.date).getTime();
+          bv = new Date(b.date).getTime();
+          break;
+        case 'description':
+          av = (a.description || '').toLowerCase();
+          bv = (b.description || '').toLowerCase();
+          break;
+        case 'keterangan':
+          av = ((a.keterangan || a.keterangan_auto) || '').toLowerCase();
+          bv = ((b.keterangan || b.keterangan_auto) || '').toLowerCase();
+          break;
+        case 'credit':
+          av = a.type === 'credit' ? Number(a.amount) : 0;
+          bv = b.type === 'credit' ? Number(b.amount) : 0;
+          break;
+        case 'debit':
+          av = a.type === 'debit' ? Number(a.amount) : 0;
+          bv = b.type === 'debit' ? Number(b.amount) : 0;
+          break;
+        case 'balance':
+          av = a.balance != null ? Number(a.balance) : 0;
+          bv = b.balance != null ? Number(b.balance) : 0;
+          break;
+        case 'status':
+          av = statusRank(a);
+          bv = statusRank(b);
+          break;
+        default:
+          av = a.id;
+          bv = b.id;
+      }
+      if (av < bv) return -1 * mult;
+      if (av > bv) return 1 * mult;
+      return 0;
+    });
+    return arr;
+  }, [mutations, sort]);
+
+  const handleSort = (key) => {
+    setSort((prev) => {
+      if (prev.key === key) {
+        return { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' };
+      }
+      const defaultDir = key === 'date' || key === 'credit' || key === 'debit' || key === 'balance' ? 'desc' : 'asc';
+      return { key, dir: defaultDir };
+    });
+  };
+
+  const renderSortHeader = (label, sortKey, extraStyle = {}) => {
+    const active = sort.key === sortKey;
+    const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    return (
+      <th
+        onClick={() => handleSort(sortKey)}
+        style={{ cursor: 'pointer', userSelect: 'none', ...extraStyle }}
+        title={`Urutkan berdasarkan ${label}`}
+      >
+        {label}{arrow}
+      </th>
+    );
+  };
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -168,17 +241,17 @@ export default function MutationReport() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Tanggal</th>
-              <th>Keterangan Bank</th>
-              <th>Keterangan</th>
-              <th>Masuk</th>
-              <th>Keluar</th>
-              <th>Saldo</th>
-              <th>Status</th>
+              {renderSortHeader('Tanggal', 'date')}
+              {renderSortHeader('Keterangan Bank', 'description')}
+              {renderSortHeader('Keterangan', 'keterangan')}
+              {renderSortHeader('Masuk', 'credit')}
+              {renderSortHeader('Keluar', 'debit')}
+              {renderSortHeader('Saldo', 'balance')}
+              {renderSortHeader('Status', 'status')}
             </tr>
           </thead>
           <tbody>
-            {mutations.map((m) => (
+            {sortedMutations.map((m) => (
               <tr key={m.id}>
                 <td style={{ whiteSpace: 'nowrap' }}>{formatDate(m.date)}</td>
                 <td style={{ maxWidth: 260, fontSize: 12, color: '#666', wordBreak: 'break-word' }}>
