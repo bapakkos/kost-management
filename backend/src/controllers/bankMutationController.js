@@ -79,6 +79,32 @@ exports.getAll = async (req, res) => {
   }
 };
 
+// Normalize a description so that bank export variations collapse to one key:
+// - collapse whitespace runs
+// - strip the "BIF " prefix (e.g. "BIF TRANSFER" vs "TRANSFER", "BIF BIAYA TXN" vs "BIAYA TXN")
+// - for "BYR VIA E-BANKING - <ref>", keep only the prefix
+function normalizeDescription(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim().replace(/\s+/g, ' ');
+  if (/^BYR VIA E-BANKING(\s*-.*)?$/i.test(s)) return 'BYR VIA E-BANKING';
+  return s
+    .replace(/^BI-FAST\s+(CR|DB)\s+-\s+/i, '')
+    .replace(/\bBIF\b\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeSender(raw) {
+  return raw ? String(raw).trim().replace(/\s+/g, ' ').toUpperCase() : '';
+}
+
+function dedupKey(p) {
+  const amount = parseFloat(p.amount);
+  const sender = normalizeSender(p.sender_name);
+  const desc = normalizeDescription(p.description);
+  return `${p.date}|${amount}|${p.type}|${sender || desc}`;
+}
+
 exports.getById = async (req, res) => {
   try {
     const mutation = await BankMutation.findByPk(req.params.id, { include: [Tenant] });
@@ -138,17 +164,26 @@ exports.importCsv = async (req, res) => {
       await SenderRegistry.findOrCreate({ where: { sender_name: name }, defaults: { sender_name: name } });
     }
 
+    const existingMutations = await BankMutation.findAll({
+      attributes: ['id', 'date', 'amount', 'type', 'sender_name', 'description'],
+    });
+    const existingKeys = new Set(existingMutations.map(m => dedupKey({
+      date: m.date,
+      amount: m.amount,
+      type: m.type,
+      sender_name: m.sender_name,
+      description: m.description,
+    })));
+
     let inserted = 0;
     let skipped = 0;
     for (const p of parsed) {
-      const existing = await BankMutation.findOne({
-        where: { date: p.date, amount: p.amount, description: p.description },
-      });
-      if (existing) {
+      if (existingKeys.has(dedupKey(p))) {
         skipped++;
         continue;
       }
       await BankMutation.create(p);
+      existingKeys.add(dedupKey(p));
       inserted++;
     }
 
