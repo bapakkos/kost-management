@@ -30,6 +30,9 @@ lerna-debug.log*
 # Database journal
 *.db-journal
 
+# Database backups
+database/*.backup-*.db
+
 # Database recovery artifacts
 database/recovery/
 # Runtime error logs

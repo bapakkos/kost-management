@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WA Bot - Intranet</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: #f5f6f8;
+      color: #222;
+    }
+    h1 { margin: 0 0 16px; font-size: 22px; }
+    .bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    #status {
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #e2e3e5;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    #status.connected { background: #d3f0dc; color: #146c43; }
+    #status.menunggu_scan { background: #fff3cd; color: #997404; }
+    #status.disconnected, #status.error { background: #f8d7da; color: #b02a37; }
+    button {
+      padding: 8px 18px;
+      border: 1px solid #c9ccd1;
+      background: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #eef0f3; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid #ececec;
+      font-size: 14px;
+      vertical-align: top;
+    }
+    th { background: #fafafa; font-weight: 600; }
+    td.waktu { white-space: nowrap; color: #666; width: 150px; }
+    td.pengirim { white-space: nowrap; font-weight: 600; width: 180px; }
+    td.teks { word-break: break-word; }
+    .empty { color: #888; padding: 20px; text-align: center; }
+    #qr-box {
+      display: none;
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+    #qr-box img { width: 280px; height: 280px; }
+    #qr-box p { margin: 8px 0 0; color: #666; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>WhatsApp Bot - Pesan Grup Kost</h1>
+  <div id="qr-box">
+    <img id="qr-img" alt="QR Code" />
+    <p>Scan QR ini dengan WhatsApp (nomor baru) untuk menghubungkan bot.</p>
+  </div>
+  <div class="bar">
+    <span id="status">memuat...</span>
+    <button id="refresh">Refresh</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Waktu</th>
+        <th>Pengirim</th>
+        <th>Pesan</th>
+      </tr>
+    </thead>
+    <tbody id="rows">
+      <tr><td colspan="3" class="empty">Memuat pesan...</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    const statusLabel = {
+      starting: 'Menghubungkan...',
+      menunggu_scan: 'Menunggu scan QR',
+      connected: 'Terhubung',
+      disconnected: 'Terputus (mencoba sambung ulang)',
+      error: 'Error',
+    };
+
+    async function loadStatus() {
+      const el = document.getElementById('status');
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        el.textContent = statusLabel[d.status] || d.status;
+        el.className = d.status || '';
+        if (d.status === 'menunggu_scan') {
+          loadQR();
+        } else {
+          document.getElementById('qr-box').style.display = 'none';
+        }
+      } catch {
+        el.textContent = 'Tidak bisa hubungi server';
+        el.className = 'error';
+      }
+    }
+
+    async function loadQR() {
+      try {
+        const r = await fetch('/api/qr');
+        const d = await r.json();
+        if (d.qr) {
+          document.getElementById('qr-img').src = d.qr;
+          document.getElementById('qr-box').style.display = 'block';
+        }
+      } catch {}
+    }
+
+    async function loadMessages() {
+      const rows = document.getElementById('rows');
+      try {
+        const r = await fetch('/api/messages');
+        const data = await r.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          rows.innerHTML = '<tr><td colspan="3" class="empty">Belum ada pesan.</td></tr>';
+          return;
+        }
+        rows.innerHTML = '';
+        for (let i = data.length - 1; i >= 0; i--) {
+          const m = data[i];
+          const tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td class="waktu">' + (m.waktu || '') + '</td>' +
+            '<td class="pengirim">' + (m.pengirim || '') + '</td>' +
+            '<td class="teks">' + (m.teks || '') + '</td>';
+          rows.appendChild(tr);
+        }
+      } catch {
+        rows.innerHTML = '<tr><td colspan="3" class="empty">Gagal memuat pesan.</td></tr>';
+      }
+    }
+
+    document.getElementById('refresh').addEventListener('click', () => {
+      loadStatus();
+      loadMessages();
+    });
+
+    loadStatus();
+    loadMessages();
+    setInterval(loadStatus, 5000);
+    setInterval(loadMessages, 3000);
+  </script>
+</body>
+</html>
